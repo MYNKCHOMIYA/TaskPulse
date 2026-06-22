@@ -2,10 +2,22 @@ import bcrypt
 from datetime import datetime,timedelta,timezone
 from pydantic import BaseModel
 from jose import jwt,JWTError
-from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends,HTTPException,status
+import os
+from dotenv import load_dotenv
 
-SECRET_KEY = "later"
+load_dotenv()
+
+
+
+raw_key = os.getenv("MY_SECRET_KEY")
+
+if raw_key is None:
+    raise ValueError("MY_SECRET_KEY environment variable is missing")
+
+SECRET_KEY : str = raw_key
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -16,7 +28,7 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email:str | None =None
     
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "/auth/login")
 
 def hash_password(password :str) -> str:
     hashed = bcrypt.hashpw(
@@ -37,24 +49,19 @@ def create_access_token(data : dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes = ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp":expire})
-    
     encoded_jwt = jwt.encode(to_encode,SECRET_KEY, algorithm = ALGORITHM)
-    
     return encoded_jwt
 
 def verify_token(token :str = Depends(oauth2_scheme)) -> TokenData:
     credentials_exception = HTTPException(
         status_code = status.HTTP_401_UNAUTHORIZED,
         detail = "Could not find credentials",
-        headers = {"www-Authenticate": "Bearer"},
+        headers = {"WWW-Authenticate": "Bearer"},
     )
     
     try:
         payload = jwt.decode(token,SECRET_KEY,algorithms=[ALGORITHM])
         email: str |None = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-        
         if email is None:
             raise credentials_exception
         

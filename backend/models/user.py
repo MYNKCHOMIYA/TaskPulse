@@ -1,9 +1,9 @@
 import enum
 from typing import Optional
 from sqlalchemy import String,Enum,func,DateTime,ForeignKey 
-from sqlalchemy.orm import Mapped,mapped_column,Session,relationship
+from sqlalchemy.orm import Mapped,mapped_column,relationship
 from datetime import datetime
-from app.database import Base , engine
+from app.database import Base,engine
 
 class Status(enum.Enum):
     
@@ -35,16 +35,13 @@ class Task(Base):
     id:Mapped[int] =mapped_column(primary_key=True)
     title:Mapped[str] =mapped_column(String(100),nullable=False)
     description:Mapped[Optional[str]] =mapped_column(String(255))
-    status: Mapped[Status] = mapped_column(Enum(Status,name = "status_enum"),nullable=False)
-    priority: Mapped[Optional[Priority]] = mapped_column(Enum(Priority,name= "priority_enum"))
+    status: Mapped[Status] = mapped_column(Enum(Status,native_enum = False),nullable=False)
+    priority: Mapped[Optional[Priority]] = mapped_column(Enum(Priority,native_enum = False))
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone =True))
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"),nullable = False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id",ondelete="CASCADE"),nullable = False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now())
     
     user: Mapped["User"] = relationship(back_populates ="tasks" )
     
 Base.metadata.create_all(engine)
-
-with Session(engine) as session:
-    pass

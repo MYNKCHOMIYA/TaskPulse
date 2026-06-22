@@ -1,7 +1,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker,DeclarativeBase
+from dotenv import load_dotenv
+import os
 
-engine = create_engine("postgresql+psycopg2://admin:admin@localhost:5432/taskpulse")
+load_dotenv()
+
+
+database_url = os.getenv("DATABASE_URL")
+if database_url is None:
+    raise ValueError("DATABASE_URL environment variable is missing from the .env file!")
+
+engine = create_engine(database_url)
 
 SessionLocal = sessionmaker(autoflush =False,bind = engine)
 
