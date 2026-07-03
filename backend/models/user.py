@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy import String,Enum,func,DateTime,ForeignKey 
 from sqlalchemy.orm import Mapped,mapped_column,relationship
 from datetime import datetime
+
 from app.database import Base,engine
 
 class Status(enum.Enum):
@@ -43,5 +44,11 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now())
     
     user: Mapped["User"] = relationship(back_populates ="tasks" )
+    
+class TokenBlocklist(Base):
+    __tablename__ = "token_blocklist"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jti: Mapped[str] = mapped_column(String(36),nullable=False,unique=True ,index = True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     
 Base.metadata.create_all(engine)

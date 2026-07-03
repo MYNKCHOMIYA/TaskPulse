@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr,ConfigDict
 
 # --- USER REGISTRATION ---
 class UserCreate(BaseModel):
@@ -13,23 +13,28 @@ class UserLogin(BaseModel):
 
 # --- USER RESPONSE DATA (SAFE FOR CLIENTS) ---
 class UserModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     username:str
     email:EmailStr
     id:int
     
-    class Config:
-        from_attributes = True
-    
 
 # --- USER UPDATE PAYLOAD ---
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     username:str | None = None
     email:EmailStr | None = None
     password:str | None = None
-    
-    class Config:
-        from_attributes = True
-    
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
 
     
     
