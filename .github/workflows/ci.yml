@@ -1,0 +1,64 @@
+name: TaskPulse CI Pipeline
+
+# Trigger this pipeline on every git push or pull request to the main branch
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      # Spin up a temporary PostgreSQL instance for database connectivity checks
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: taskpulse
+        ports:
+          - 5432:5432
+        # Wait until postgres is fully healthy before starting test execution blocks
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # 1. Check out your code repository inside the GitHub runner workspace
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      # 2. Set up the specific Python runtime environment
+      # FIX 1: Swapped 'add-to-registry-python' to the official standard 'setup-python' engine
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip' 
+          # FIX 2: Explicitly tell the caching engine where your dependencies file lives
+          cache-dependency-path: backend/requirements.txt
+
+      # 3. Install all dependencies from your verified requirements file
+      # FIX 3: Added working-directory parameter so pip finds your file inside the backend subfolder
+      - name: Install Dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # 4. Inject temporary environment variables for the test context runtime scope
+      # FIX 4: Added working-directory parameter so pytest finds your modules layout tree seamlessly
+      - name: Run Automated Pytest Engine
+        working-directory: ./backend
+        env:
+          MY_SECRET_KEY: temporary_ci_crypt_secret_signing_key_string_for_testing_boundaries
+          DATABASE_URL: postgresql+psycopg2://admin:admin@localhost:5432/taskpulse
+        run: |
+          python -m pytest -v
+
