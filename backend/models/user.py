@@ -51,4 +51,4 @@ class TokenBlocklist(Base):
     jti: Mapped[str] = mapped_column(String(36),nullable=False,unique=True ,index = True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     
-Base.metadata.create_all(engine)
+# Base.metadata.create_all(engine)
