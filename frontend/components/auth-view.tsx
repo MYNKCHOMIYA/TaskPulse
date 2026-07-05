@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { flushSync } from "react-dom"
 import { Eye, EyeOff, Loader2, Zap, ArrowRight, Moon, Sun } from "lucide-react"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -40,8 +41,10 @@ function ThemeToggle() {
     const y = rect ? rect.top + rect.height / 2 : e.clientY
 
     const transition = (document as any).startViewTransition(() => {
-      setTheme(next)
-      setLocalTheme(next)
+      flushSync(() => {
+        setTheme(next)
+        setLocalTheme(next)
+      })
     })
 
     transition.ready.then(() => {
@@ -116,7 +119,9 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         const endRadius = Math.hypot(x, y)
 
         const transition = (document as any).startViewTransition(() => {
-          onAuthenticated()
+          flushSync(() => {
+            onAuthenticated()
+          })
         })
 
         transition.ready.then(() => {

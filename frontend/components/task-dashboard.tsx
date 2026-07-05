@@ -157,29 +157,55 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
 
   async function handleToggleComplete(task: Task) {
     const newStatus: TaskStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED"
+    
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+    
     try {
       const updated = await api.tasks.updateTask(task.id, { status: newStatus })
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t))
-    } catch (err: any) { alert(err.message) }
+    } catch (err: any) {
+      // Revert on failure
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t))
+      alert(err.message)
+    }
   }
 
   async function handleStatusChange(task: Task, status: TaskStatus) {
     if (task.status === status) return
+    const originalStatus = task.status
+    
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status } : t))
+    
     try {
       const updated = await api.tasks.updateTask(task.id, { status })
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t))
-    } catch (err: any) { alert(err.message) }
+    } catch (err: any) {
+      // Revert on failure
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: originalStatus } : t))
+      alert(err.message)
+    }
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return
+    const target = deleteTarget
     setDeleteLoading(true)
+    
+    // Optimistic update: close modal and remove task immediately
+    setDeleteTarget(null)
+    setTasks(prev => prev.filter(t => t.id !== target.id))
+    
     try {
-      await api.tasks.deleteTask(deleteTarget.id)
-      setTasks(prev => prev.filter(t => t.id !== deleteTarget.id))
-      setDeleteTarget(null)
-    } catch (err: any) { alert(err.message) }
-    finally { setDeleteLoading(false) }
+      await api.tasks.deleteTask(target.id)
+    } catch (err: any) {
+      // Revert on failure: restore task
+      setTasks(prev => [target, ...prev])
+      alert(err.message)
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   const hasFilters = priorityFilter !== "ALL" || !!searchQuery

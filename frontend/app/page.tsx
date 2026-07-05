@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { flushSync } from "react-dom"
 import { Loader2, Zap } from "lucide-react"
 
 import { AuthView }      from "@/components/auth-view"
@@ -56,8 +57,10 @@ export default function Page() {
       const y = window.innerHeight / 2
       const endRadius = Math.hypot(x, y)
       const transition = (document as any).startViewTransition(() => {
-        setIsAuthenticated(false)
-        setUser(null)
+        flushSync(() => {
+          setIsAuthenticated(false)
+          setUser(null)
+        })
       })
       transition.ready.then(() => {
         document.documentElement.animate(
@@ -90,8 +93,10 @@ export default function Page() {
       const y = window.innerHeight / 2
       const endRadius = Math.hypot(x, y)
       const transition = (document as any).startViewTransition(() => {
-        setIsAuthenticated(false)
-        setUser(null)
+        flushSync(() => {
+          setIsAuthenticated(false)
+          setUser(null)
+        })
       })
       transition.ready.then(() => {
         document.documentElement.animate(

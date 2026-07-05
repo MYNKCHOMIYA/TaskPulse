@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { flushSync } from "react-dom"
 import {
   CheckSquare2,
   Circle,
@@ -63,8 +64,10 @@ function ThemeCycleButton() {
     const y = rect ? rect.top + rect.height / 2 : e.clientY
 
     const transition = (document as any).startViewTransition(() => {
-      setTheme(next)
-      setLocalTheme(next)
+      flushSync(() => {
+        setTheme(next)
+        setLocalTheme(next)
+      })
     })
 
     transition.ready.then(() => {
