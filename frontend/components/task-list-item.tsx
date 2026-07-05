@@ -82,13 +82,15 @@ export function TaskListItem({
     liveTx.current = tx
     const P = Math.min(1, Math.abs(tx) / 120)
     if (cardRef.current) {
-      cardRef.current.style.transform  = `translateX(${tx}px)`
+      // Always keep translateZ(0) — it maintains the GPU compositor layer.
+      // Without it, Samsung Chrome stops firing touchmove after the first write.
+      cardRef.current.style.transform  = `translateX(${tx}px) translateZ(0)`
       cardRef.current.style.transition = "none"
     }
 
     // Only reveal background in directions that will actually trigger an action
-    const canRight = task.status !== "IN_PROGRESS"   // right → IN_PROGRESS (not if already there)
-    const canLeft  = task.status !== "COMPLETED"      // left  → COMPLETED  (not if already there)
+    const canRight = task.status !== "IN_PROGRESS"
+    const canLeft  = task.status !== "COMPLETED"
 
     if (bgRightRef.current)   bgRightRef.current.style.opacity   = (tx > 0 && canRight) ? String(P * 0.95) : "0"
     if (bgLeftRef.current)    bgLeftRef.current.style.opacity    = (tx < 0 && canLeft)  ? String(P * 0.95) : "0"
@@ -109,7 +111,8 @@ export function TaskListItem({
       cardRef.current.style.transition = animated
         ? "transform 400ms cubic-bezier(0.175, 0.885, 0.32, 1.15)"
         : "none"
-      cardRef.current.style.transform = "translateX(0)"
+      // Preserve translateZ(0) to keep the GPU layer alive for the next gesture
+      cardRef.current.style.transform = "translateX(0) translateZ(0)"
     }
     if (bgRightRef.current)   bgRightRef.current.style.opacity   = "0"
     if (bgLeftRef.current)    bgLeftRef.current.style.opacity    = "0"
@@ -121,7 +124,8 @@ export function TaskListItem({
   const triggerCollapse = React.useCallback(() => {
     if (cardRef.current) {
       cardRef.current.style.transition = "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
-      cardRef.current.style.transform  = "translateX(-110%)"
+      // translateZ(0) keeps GPU layer during slide-out
+      cardRef.current.style.transform  = "translateX(-110%) translateZ(0)"
     }
     if (elementRef.current) setCollapseHeight(elementRef.current.offsetHeight)
     setTimeout(() => setIsCollapsing(true), 16)
@@ -129,7 +133,7 @@ export function TaskListItem({
       onStatusChange(task, "COMPLETED")
       setIsCollapsing(false); setCollapseHeight(undefined)
       liveTx.current = 0
-      if (cardRef.current) { cardRef.current.style.transform = ""; cardRef.current.style.transition = "" }
+      if (cardRef.current) { cardRef.current.style.transform = "translateZ(0)"; cardRef.current.style.transition = "" }
     }, 380)
   }, [task, onStatusChange])
 
@@ -312,11 +316,14 @@ export function TaskListItem({
           position: "relative",
           zIndex: 20,
           touchAction: "none",
-          // translateZ(0) forces GPU compositor layer on ALL cards (not just IN_PROGRESS).
-          // Without this, Samsung Chrome doesn't deliver touchmove events reliably
-          // for PENDING and COMPLETED cards that lack the animate-progress-glow layer.
+          // translateZ(0): forces GPU compositor layer immediately on mount.
+          // backfaceVisibility:hidden: secondary GPU layer guarantee (Samsung fix).
+          // Both together ensure touchmove events are delivered for PENDING/COMPLETED
+          // cards that have no running CSS animation to promote them naturally.
           transform: "translateZ(0)",
           willChange: "transform",
+          backfaceVisibility: "hidden",
+          WebkitBackfaceVisibility: "hidden",
         }}
         className={cn(
           "group rounded-xl border border-border border-l-2 bg-card",
