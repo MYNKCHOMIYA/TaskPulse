@@ -95,19 +95,20 @@ export function TaskFormPanel({ open, task, onClose, onSave }: TaskFormPanelProp
 
   return (
     <>
-      {/* Backdrop (mobile) */}
-      {open && (
-        <div
-          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm lg:hidden animate-fade-in"
-          onClick={onClose}
-        />
-      )}
+      {/* Backdrop (mobile) - transitions opacity smoothly without heavy backdrop blurs */}
+      <div
+        className={cn(
+          "fixed inset-0 z-30 bg-black/30 lg:hidden transition-opacity duration-300 ease-out",
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onClose}
+      />
 
-      {/* Panel */}
+      {/* Panel - uses will-change-transform for GPU acceleration */}
       <div
         className={cn(
           "fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col bg-card border-l border-border shadow-2xl",
-          "transition-transform duration-300 ease-out",
+          "transition-transform duration-300 ease-out will-change-transform",
           open ? "translate-x-0" : "translate-x-full"
         )}
       >

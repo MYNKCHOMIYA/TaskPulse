@@ -133,19 +133,20 @@ export function AppSidebar({
 }: AppSidebarProps) {
   return (
     <>
-      {/* Mobile overlay */}
-      {isMobileOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden animate-fade-in"
-          onClick={onMobileClose}
-        />
-      )}
+      {/* Mobile overlay - transitions opacity smoothly without heavy backdrop blurs */}
+      <div
+        className={cn(
+          "fixed inset-0 z-30 bg-black/40 lg:hidden transition-opacity duration-300 ease-out",
+          isMobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onMobileClose}
+      />
 
-      {/* Sidebar panel */}
+      {/* Sidebar panel - uses will-change-transform for GPU acceleration */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar border-r border-sidebar-border",
-          "transition-transform duration-300 ease-out",
+          "transition-transform duration-300 ease-out will-change-transform",
           "lg:relative lg:translate-x-0 lg:z-auto",
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
