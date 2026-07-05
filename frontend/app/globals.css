@@ -353,3 +353,20 @@ html:active-view-transition ::after {
   animation: long-press-ring 0.55s ease-out forwards;
   will-change: box-shadow;
 }
+
+/* ── COMPOSITOR HACK FOR SAMSUNG MOBILE ── */
+/* 
+   Samsung Chrome aggressively freezes layers that aren't actively animating.
+   JS touchmove `style.transform` writes are ignored visually until touchend.
+   IN_PROGRESS works because of `animate-progress-glow`.
+   This invisible animation forces a 60fps GPU repaint on PENDING/COMPLETED tasks.
+*/
+@keyframes layer-keep-alive {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+  50%      { box-shadow: 0 0 0 0 rgba(0,0,0,0.01); }
+}
+
+.animate-layer-keep-alive {
+  animation: layer-keep-alive 2s linear infinite;
+  will-change: box-shadow;
+}

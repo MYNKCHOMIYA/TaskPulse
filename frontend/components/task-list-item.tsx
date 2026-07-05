@@ -327,7 +327,7 @@ export function TaskListItem({
         }}
         className={cn(
           "group rounded-xl border border-border border-l-2 bg-card",
-          task.status === "IN_PROGRESS" && "animate-progress-glow",
+          task.status === "IN_PROGRESS" ? "animate-progress-glow" : "animate-layer-keep-alive",
           selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20"
                    : !isCompleted ? statusCfg.border : "border-l-transparent opacity-55",
           (menuOpen || statusOpen) ? "shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
