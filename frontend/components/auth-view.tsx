@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { getStoredTheme, setTheme, type Theme } from "@/lib/theme"
 
 type AuthMode = "login" | "signup"
-interface AuthViewProps { onAuthenticated: () => void }
+interface AuthViewProps { onAuthenticated: (preFetchedUser?: any) => void }
 
 // ── Floating Theme Toggle inside login view ────────────────
 function ThemeToggle() {
@@ -110,6 +110,10 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         await api.auth.signup(username.trim(), email, password)
         await api.auth.login(email, password)
       }
+
+      // Fetch user profile immediately before starting the transition to prevent visual lag
+      const profile = await api.auth.getMe()
+
       setSuccess(true)
 
       const isSupported = typeof document !== "undefined" && "startViewTransition" in document
@@ -120,7 +124,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
 
         const transition = (document as any).startViewTransition(() => {
           flushSync(() => {
-            onAuthenticated()
+            onAuthenticated(profile)
           })
         })
 
@@ -140,7 +144,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
           )
         })
       } else {
-        onAuthenticated()
+        onAuthenticated(profile)
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Something went wrong. Please try again.")

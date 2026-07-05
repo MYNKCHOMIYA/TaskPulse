@@ -23,9 +23,15 @@ export default function Page() {
   const [sidebarOpen,   setSidebarOpen]   = React.useState(false)
 
   // ── Auth check on mount ────────────────────────────────
-  const checkAuth = React.useCallback(async () => {
+  const checkAuth = React.useCallback(async (preFetchedUser?: User) => {
     const token = getAccessToken()
     if (!token) {
+      setIsLoading(false)
+      return
+    }
+    if (preFetchedUser) {
+      setUser(preFetchedUser as User & { id: number })
+      setIsAuthenticated(true)
       setIsLoading(false)
       return
     }
@@ -50,7 +56,9 @@ export default function Page() {
 
   // ── Logout ─────────────────────────────────────────────
   const handleLogout = React.useCallback(async () => {
-    try { await api.auth.logout() } catch {}
+    // Fire API call in the background without awaiting it to avoid freezing UI
+    api.auth.logout().catch(() => {})
+    
     const isSupported = typeof document !== 'undefined' && 'startViewTransition' in document
     if (isSupported) {
       const x = window.innerWidth / 2
