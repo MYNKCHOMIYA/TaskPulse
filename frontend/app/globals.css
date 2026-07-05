@@ -298,19 +298,33 @@ html:active-view-transition ::after {
   transition: none !important;
 }
 
-/* ── PERSISTENT LOADING SLIDE & COMPLETED TRANSITIONS ── */
-@keyframes loading-slide {
-  0% {
-    transform: translateX(-100%) translateZ(0);
+
+/* ── IN-PROGRESS ACTIVITY ANIMATION ── */
+/* Bouncing dots — like a typing indicator but for "task in progress" */
+@keyframes activity-dot {
+  0%, 60%, 100% {
+    transform: translateY(0) scale(0.75);
+    opacity: 0.35;
   }
-  100% {
-    transform: translateX(200%) translateZ(0);
+  30% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
   }
 }
 
-.animate-loading-slide {
-  animation: loading-slide 1.5s infinite linear;
-  will-change: transform;
+.activity-dot-1 { animation: activity-dot 1.2s ease-in-out infinite; }
+.activity-dot-2 { animation: activity-dot 1.2s ease-in-out 0.18s infinite; }
+.activity-dot-3 { animation: activity-dot 1.2s ease-in-out 0.36s infinite; }
+
+/* Pulsing left-border glow for IN_PROGRESS cards */
+@keyframes progress-border-glow {
+  0%, 100% { box-shadow: -3px 0 10px -2px rgba(59, 130, 246, 0.15); }
+  50%       { box-shadow: -3px 0 18px  0px rgba(59, 130, 246, 0.55); }
+}
+
+.animate-progress-glow {
+  animation: progress-border-glow 2s ease-in-out infinite;
+  will-change: box-shadow;
 }
 
 @keyframes completed-slide-down {
