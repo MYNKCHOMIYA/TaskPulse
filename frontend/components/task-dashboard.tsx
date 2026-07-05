@@ -10,7 +10,10 @@ import {
   Search,
   SlidersHorizontal,
   X,
+  Pencil,
+  Trash2,
 } from "lucide-react"
+import confetti from "canvas-confetti"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import {
@@ -86,6 +89,65 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
   const [deleteTarget,  setDeleteTarget]  = React.useState<Task | null>(null)
   const [deleteLoading, setDeleteLoading] = React.useState(false)
 
+  // ── Selection Mode States ──────────────────────────────────
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState(false)
+
+  const selectionMode = selectedIds.size > 0
+
+  const handleToggleSelect = React.useCallback((task: Task) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(task.id)) {
+        next.delete(task.id)
+      } else {
+        next.add(task.id)
+      }
+      return next
+    })
+  }, [])
+
+  const handleStartSelection = React.useCallback((task: Task) => {
+    setSelectedIds(new Set([task.id]))
+  }, [])
+
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
+  const handleEditSelected = React.useCallback(() => {
+    if (selectedIds.size !== 1) return
+    const id = Array.from(selectedIds)[0]
+    const task = tasks.find(t => t.id === id)
+    if (task) {
+      setEditingTask(task)
+      setPanelOpen(true)
+      setSelectedIds(new Set())
+    }
+  }, [selectedIds, tasks])
+
+  async function confirmBulkDelete() {
+    if (selectedIds.size === 0) return
+    const targets = Array.from(selectedIds)
+    setBulkDeleteConfirm(false)
+    setDeleteLoading(true)
+
+    const prevTasks = [...tasks]
+
+    // Optimistic delete from UI & reset selection
+    setTasks(prev => prev.filter(t => !selectedIds.has(t.id)))
+    setSelectedIds(new Set())
+
+    try {
+      await Promise.all(targets.map(id => api.tasks.deleteTask(id)))
+    } catch (err: any) {
+      setTasks(prevTasks)
+      alert("Failed to delete some tasks. Please try again.")
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   const statusFilter = VIEW_STATUS_MAP[statusView] ?? "ALL"
 
   // ── Fetch ───────────────────────────────────────────────
@@ -155,11 +217,25 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
     }
   }
 
+  // ── Confetti Celebration Helper ───────────────────────────
+  const triggerConfetti = React.useCallback(() => {
+    confetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.8 },
+      colors: ["#6366f1", "#10b981", "#3b82f6", "#f59e0b", "#ec4899"],
+    })
+  }, [])
+
   async function handleToggleComplete(task: Task) {
     const newStatus: TaskStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED"
     
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+    
+    if (newStatus === "COMPLETED") {
+      triggerConfetti()
+    }
     
     try {
       const updated = await api.tasks.updateTask(task.id, { status: newStatus })
@@ -177,6 +253,10 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
     
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status } : t))
+    
+    if (status === "COMPLETED") {
+      triggerConfetti()
+    }
     
     try {
       const updated = await api.tasks.updateTask(task.id, { status })
@@ -223,8 +303,42 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
 
       {/* ── Sticky header ────────────────────────────────── */}
       <div className="sticky top-0 z-10 flex flex-col gap-4 border-b border-border bg-background/90 backdrop-blur px-6 pt-6 pb-4">
+        {/* Selection mode floating bar */}
+        {selectionMode && (
+          <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-2.5 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleClearSelection}
+                className="flex size-7 items-center justify-center rounded-lg hover:bg-primary/15 text-primary active:scale-95 transition-all"
+                title="Cancel selection"
+              >
+                <X className="size-4" />
+              </button>
+              <span className="text-sm font-semibold text-primary">{selectedIds.size} selected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedIds.size === 1 && (
+                <button
+                  onClick={handleEditSelected}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-background hover:bg-muted border border-border rounded-lg active:scale-95 transition-all"
+                >
+                  <Pencil className="size-3.5" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setBulkDeleteConfirm(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-destructive text-white hover:opacity-90 rounded-lg active:scale-95 transition-all"
+              >
+                <Trash2 className="size-3.5" />
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Title + New button */}
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-bold tracking-tight">{VIEW_LABELS[statusView]}</h1>
             {!isLoading && (
@@ -365,6 +479,10 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
                         onDelete={setDeleteTarget}
                         onToggleComplete={handleToggleComplete}
                         onStatusChange={handleStatusChange}
+                        selectionMode={selectionMode}
+                        selected={selectedIds.has(task.id)}
+                        onToggleSelect={handleToggleSelect}
+                        onStartSelection={handleStartSelection}
                       />
                     </div>
                   ))}
@@ -396,6 +514,10 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
                           onDelete={setDeleteTarget}
                           onToggleComplete={handleToggleComplete}
                           onStatusChange={handleStatusChange}
+                          selectionMode={selectionMode}
+                          selected={selectedIds.has(task.id)}
+                          onToggleSelect={handleToggleSelect}
+                          onStartSelection={handleStartSelection}
                         />
                       </div>
                     ))}
@@ -452,6 +574,39 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
               >
                 {deleteLoading && <Loader2 className="size-4 animate-spin" />}
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Delete confirm ───────────────────────────── */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
+            onClick={() => setBulkDeleteConfirm(false)}
+          />
+          <div className="relative z-10 w-full max-w-sm animate-scale-in rounded-2xl bg-card border border-border shadow-2xl p-6 space-y-4">
+            <h3 className="font-bold text-base">Delete multiple tasks?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              You are about to permanently delete <span className="font-medium text-foreground">{selectedIds.size} tasks</span>. This action is irreversible.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setBulkDeleteConfirm(false)}
+                disabled={deleteLoading}
+                className="flex-1 h-9 rounded-lg border border-border text-sm hover:bg-muted active:scale-[0.97] transition-all duration-150"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmBulkDelete}
+                disabled={deleteLoading}
+                className="flex-1 h-9 rounded-lg bg-destructive text-white text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.97] transition-all duration-150 disabled:opacity-50"
+              >
+                {deleteLoading && <Loader2 className="size-4 animate-spin" />}
+                Delete Selected
               </button>
             </div>
           </div>

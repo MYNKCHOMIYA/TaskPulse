@@ -6,6 +6,8 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
+  Play,
+  Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -22,6 +24,12 @@ interface TaskListItemProps {
   onDelete: (task: Task) => void
   onToggleComplete: (task: Task) => void
   onStatusChange: (task: Task, status: TaskStatus) => void
+  
+  // Selection mode props
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (task: Task) => void
+  onStartSelection?: (task: Task) => void
 }
 
 const PRIORITY_CONFIG: Record<
@@ -80,6 +88,10 @@ export function TaskListItem({
   onDelete,
   onToggleComplete,
   onStatusChange,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
+  onStartSelection,
 }: TaskListItemProps) {
   const [expanded, setExpanded] = React.useState(false)
   const [menuOpen, setMenuOpen] = React.useState(false)
@@ -89,6 +101,88 @@ export function TaskListItem({
   const moreBtnRef = React.useRef<HTMLButtonElement>(null)
   const statusRef = React.useRef<HTMLDivElement>(null)
   const statusBtnRef = React.useRef<HTMLButtonElement>(null)
+
+  // ── Swipe Gestures & Long Hold States ─────────────────────
+  const touchStartX = React.useRef(0)
+  const touchStartY = React.useRef(0)
+  const [swipeX, setSwipeX] = React.useState(0)
+  const [swiping, setSwiping] = React.useState(false)
+  const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
+  const isSwipeActive = React.useRef(false)
+
+  const handleStart = (clientX: number, clientY: number) => {
+    if (menuOpen || statusOpen) return
+    touchStartX.current = clientX
+    touchStartY.current = clientY
+    isSwipeActive.current = false
+    setSwipeX(0)
+
+    if (onStartSelection && !selectionMode) {
+      longHoldTimer.current = setTimeout(() => {
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+          navigator.vibrate(40)
+        }
+        onStartSelection(task)
+      }, 550)
+    }
+  }
+
+  const handleMove = (clientX: number, clientY: number) => {
+    const dx = clientX - touchStartX.current
+    const dy = clientY - touchStartY.current
+
+    if (Math.hypot(dx, dy) > 8) {
+      if (longHoldTimer.current) {
+        clearTimeout(longHoldTimer.current)
+        longHoldTimer.current = null
+      }
+    }
+
+    if (!isSwipeActive.current && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      isSwipeActive.current = true
+      setSwiping(true)
+    }
+
+    if (isSwipeActive.current) {
+      let targetX = dx
+      if (dx > 160) targetX = 160 + (dx - 160) * 0.3
+      if (dx < -160) targetX = -160 + (dx + 160) * 0.3
+      setSwipeX(targetX)
+    }
+  }
+
+  const handleEnd = () => {
+    if (longHoldTimer.current) {
+      clearTimeout(longHoldTimer.current)
+      longHoldTimer.current = null
+    }
+
+    if (swiping) {
+      setSwiping(false)
+      isSwipeActive.current = false
+
+      if (swipeX > 100) {
+        onStatusChange(task, "IN_PROGRESS")
+      } else if (swipeX < -100) {
+        onStatusChange(task, "COMPLETED")
+      }
+    }
+    setSwipeX(0)
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (
+      moreBtnRef.current?.contains(e.target as Node) ||
+      statusBtnRef.current?.contains(e.target as Node) ||
+      menuRef.current?.contains(e.target as Node) ||
+      statusRef.current?.contains(e.target as Node)
+    ) {
+      return
+    }
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect(task)
+    }
+  }
 
   const isCompleted  = task.status === "COMPLETED"
   const priorityCfg  = task.priority ? PRIORITY_CONFIG[task.priority] : null
@@ -128,24 +222,81 @@ export function TaskListItem({
   }, [statusOpen])
 
   return (
-    <div
-      className={cn(
-        "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200",
-        isCompleted ? "border-l-transparent opacity-55" : statusCfg.border,
-        (menuOpen || statusOpen) ? "z-30 shadow-md border-border/80" : "z-10 hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
-        "animate-fade-up"
+    <div className="relative overflow-hidden rounded-xl select-none">
+      {/* Slide panels (behind card) */}
+      {swipeX > 0 && (
+        <div
+          className="absolute inset-y-0 left-0 z-0 flex items-center bg-blue-500 text-white rounded-xl pl-5 transition-opacity"
+          style={{ width: `${Math.max(0, swipeX)}px`, opacity: swipeX > 15 ? 1 : 0 }}
+        >
+          <div className="flex items-center gap-2 select-none font-semibold text-xs whitespace-nowrap">
+            <Play className="size-4 animate-pulse shrink-0" />
+            <span>Start</span>
+          </div>
+        </div>
       )}
-    >
-      {/* Rigid row grid container */}
-      <div className="flex items-center gap-3 px-4 py-3">
+      {swipeX < 0 && (
+        <div
+          className="absolute inset-y-0 right-0 z-0 flex items-center justify-end bg-emerald-500 text-white rounded-xl pr-5 transition-opacity"
+          style={{ width: `${Math.max(0, -swipeX)}px`, opacity: swipeX < -15 ? 1 : 0 }}
+        >
+          <div className="flex items-center gap-2 select-none font-semibold text-xs whitespace-nowrap">
+            <span>Complete</span>
+            <Check className="size-4 shrink-0" />
+          </div>
+        </div>
+      )}
 
-        {/* Col 1: Checkbox */}
-        <div className="flex items-center justify-center shrink-0">
-          <button
-            onClick={() => onToggleComplete(task)}
-            title={isCompleted ? "Mark as pending" : "Mark as complete"}
-            className={cn(
-              "flex size-5 items-center justify-center rounded-full border-2",
+      {/* Main card content container */}
+      <div
+        onTouchStart={e => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={e => handleMove(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchEnd={handleEnd}
+        onMouseDown={e => handleStart(e.clientX, e.clientY)}
+        onMouseMove={e => swiping && handleMove(e.clientX, e.clientY)}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        onClick={handleClick}
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: swiping ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
+        className={cn(
+          "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-10",
+          selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20" : "",
+          !selected && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
+          (menuOpen || statusOpen) ? "z-30 shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
+          selectionMode && "cursor-pointer select-none",
+          "animate-fade-up"
+        )}
+      >
+        {/* Rigid row grid container */}
+        <div className="flex items-center gap-3 px-4 py-3">
+
+          {/* Col 1: Checkbox */}
+          <div className="flex items-center justify-center shrink-0">
+            {selectionMode ? (
+              <div
+                className={cn(
+                  "flex size-5 items-center justify-center rounded-lg border-2 transition-all duration-150",
+                  selected
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                    : "border-muted-foreground/45 hover:border-primary"
+                )}
+              >
+                {selected && (
+                  <svg viewBox="0 0 10 8" fill="none" className="size-2.5">
+                    <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => onToggleComplete(task)}
+                title={isCompleted ? "Mark as pending" : "Mark as complete"}
+                className={cn(
+                  "flex size-5 items-center justify-center rounded-full border-2",
               "transition-all duration-200 active:scale-90 hover:scale-110",
               isCompleted
                 ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25"
@@ -159,7 +310,8 @@ export function TaskListItem({
               </svg>
             )}
           </button>
-        </div>
+        )}
+      </div>
 
         {/* Col 2: Content Details */}
         <div className="flex-1 min-w-0 space-y-1">
@@ -345,6 +497,7 @@ export function TaskListItem({
           </p>
         </div>
       )}
+      </div>
     </div>
   )
 }
