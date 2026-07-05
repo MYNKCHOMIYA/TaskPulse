@@ -61,13 +61,17 @@ export default function Page() {
     
     const isSupported = typeof document !== 'undefined' && 'startViewTransition' in document
     if (isSupported) {
-      const x = window.innerWidth / 2
-      const y = window.innerHeight / 2
-      const endRadius = Math.hypot(x, y)
+      const isMobile = window.innerWidth < 1024
+      if (!isMobile) {
+        const x = window.innerWidth / 2
+        const y = window.innerHeight / 2
+        const endRadius = Math.hypot(x, y)
 
-      document.documentElement.style.setProperty('--click-x', `${x}px`)
-      document.documentElement.style.setProperty('--click-y', `${y}px`)
-      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+        document.documentElement.classList.add('theme-transition')
+        document.documentElement.style.setProperty('--click-x', `${x}px`)
+        document.documentElement.style.setProperty('--click-y', `${y}px`)
+        document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+      }
 
       const transition = (document as any).startViewTransition(() => {
         flushSync(() => {
@@ -75,6 +79,12 @@ export default function Page() {
           setUser(null)
         })
       })
+
+      if (!isMobile) {
+        transition.finished.then(() => {
+          document.documentElement.classList.remove('theme-transition')
+        })
+      }
     } else {
       setIsAuthenticated(false)
       setUser(null)
@@ -87,13 +97,17 @@ export default function Page() {
     setProfileOpen(false)
     const isSupported = typeof document !== 'undefined' && 'startViewTransition' in document
     if (isSupported) {
-      const x = window.innerWidth / 2
-      const y = window.innerHeight / 2
-      const endRadius = Math.hypot(x, y)
+      const isMobile = window.innerWidth < 1024
+      if (!isMobile) {
+        const x = window.innerWidth / 2
+        const y = window.innerHeight / 2
+        const endRadius = Math.hypot(x, y)
 
-      document.documentElement.style.setProperty('--click-x', `${x}px`)
-      document.documentElement.style.setProperty('--click-y', `${y}px`)
-      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+        document.documentElement.classList.add('theme-transition')
+        document.documentElement.style.setProperty('--click-x', `${x}px`)
+        document.documentElement.style.setProperty('--click-y', `${y}px`)
+        document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+      }
 
       const transition = (document as any).startViewTransition(() => {
         flushSync(() => {
@@ -101,6 +115,12 @@ export default function Page() {
           setUser(null)
         })
       })
+
+      if (!isMobile) {
+        transition.finished.then(() => {
+          document.documentElement.classList.remove('theme-transition')
+        })
+      }
     } else {
       setIsAuthenticated(false)
       setUser(null)

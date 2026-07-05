@@ -67,9 +67,14 @@ function ThemeCycleButton() {
       Math.max(y, window.innerHeight - y)
     )
 
-    document.documentElement.style.setProperty('--click-x', `${x}px`)
-    document.documentElement.style.setProperty('--click-y', `${y}px`)
-    document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+    const isMobile = window.innerWidth < 1024
+
+    if (!isMobile) {
+      document.documentElement.classList.add('theme-transition')
+      document.documentElement.style.setProperty('--click-x', `${x}px`)
+      document.documentElement.style.setProperty('--click-y', `${y}px`)
+      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+    }
 
     const transition = (document as any).startViewTransition(() => {
       flushSync(() => {
@@ -77,6 +82,12 @@ function ThemeCycleButton() {
         setLocalTheme(next)
       })
     })
+
+    if (!isMobile) {
+      transition.finished.then(() => {
+        document.documentElement.classList.remove('theme-transition')
+      })
+    }
   }
 
   const Icon = theme === "dark" ? Moon : Sun

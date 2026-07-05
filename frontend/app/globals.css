@@ -249,12 +249,34 @@
 }
 
 /* ── VIEW TRANSITIONS FOR CIRCULAR THEME REVEAL ── */
-::view-transition-old(root) {
+/* ── VIEW TRANSITIONS: HYBRID DESKTOP/MOBILE ── */
+
+/* 1. CPU-friendly GPU compositor cross-fade (Default / Mobile) */
+html:not(.theme-transition)::view-transition-old(root) {
+  animation: 220ms cubic-bezier(0.4, 0, 0.2, 1) both fade-out;
+  mix-blend-mode: normal;
+}
+html:not(.theme-transition)::view-transition-new(root) {
+  animation: 220ms cubic-bezier(0.4, 0, 0.2, 1) both fade-in;
+  mix-blend-mode: normal;
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 2. Premium circular wipe (Desktop only - active when .theme-transition is present) */
+html.theme-transition::view-transition-old(root) {
   animation: none;
   mix-blend-mode: normal;
   z-index: 1;
 }
-::view-transition-new(root) {
+html.theme-transition::view-transition-new(root) {
   animation: circular-reveal 650ms cubic-bezier(0.4, 0, 0.2, 1) both;
   mix-blend-mode: normal;
   z-index: 9999;

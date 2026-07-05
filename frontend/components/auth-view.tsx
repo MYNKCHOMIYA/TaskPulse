@@ -44,9 +44,14 @@ function ThemeToggle() {
       Math.max(y, window.innerHeight - y)
     )
 
-    document.documentElement.style.setProperty('--click-x', `${x}px`)
-    document.documentElement.style.setProperty('--click-y', `${y}px`)
-    document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+    const isMobile = window.innerWidth < 1024
+
+    if (!isMobile) {
+      document.documentElement.classList.add('theme-transition')
+      document.documentElement.style.setProperty('--click-x', `${x}px`)
+      document.documentElement.style.setProperty('--click-y', `${y}px`)
+      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+    }
 
     const transition = (document as any).startViewTransition(() => {
       flushSync(() => {
@@ -54,6 +59,12 @@ function ThemeToggle() {
         setLocalTheme(next)
       })
     })
+
+    if (!isMobile) {
+      transition.finished.then(() => {
+        document.documentElement.classList.remove('theme-transition')
+      })
+    }
   }
 
   const Icon = theme === "dark" ? Moon : Sun
@@ -105,19 +116,29 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
 
       const isSupported = typeof document !== "undefined" && "startViewTransition" in document
       if (isSupported) {
-        const x = window.innerWidth / 2
-        const y = window.innerHeight / 2
-        const endRadius = Math.hypot(x, y)
+        const isMobile = window.innerWidth < 1024
+        if (!isMobile) {
+          const x = window.innerWidth / 2
+          const y = window.innerHeight / 2
+          const endRadius = Math.hypot(x, y)
 
-        document.documentElement.style.setProperty('--click-x', `${x}px`)
-        document.documentElement.style.setProperty('--click-y', `${y}px`)
-        document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+          document.documentElement.classList.add('theme-transition')
+          document.documentElement.style.setProperty('--click-x', `${x}px`)
+          document.documentElement.style.setProperty('--click-y', `${y}px`)
+          document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+        }
 
         const transition = (document as any).startViewTransition(() => {
           flushSync(() => {
             onAuthenticated(profile)
           })
         })
+
+        if (!isMobile) {
+          transition.finished.then(() => {
+            document.documentElement.classList.remove('theme-transition')
+          })
+        }
       } else {
         onAuthenticated(profile)
       }
@@ -292,10 +313,17 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         .gl-bg-image {
           position: absolute;
           inset: 0;
-          background-image: url('/bg.png');
+          background-image: url('/bg.webp'); /* Mobile default (160KB) */
           background-size: cover;
           background-position: center;
           pointer-events: none;
+        }
+
+        /* Large screens get the high-resolution bg.png (4.5MB) */
+        @media (min-width: 1024px) {
+          .gl-bg-image {
+            background-image: url('/bg.png');
+          }
         }
 
         /* Color correction overlay - darken/contrast mapping */
