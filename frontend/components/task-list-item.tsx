@@ -117,6 +117,10 @@ export function TaskListItem({
   const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
   const isSwipeActive = React.useRef(false)
 
+  // ── Scroll axis interception refs ──
+  const isScrollGesture = React.useRef(false)
+  const isGestureEvaluated = React.useRef(false)
+
   // Coords for portalized dropdown menus
   const [dropdownCoords, setDropdownCoords] = React.useState<{
     top: number
@@ -194,8 +198,10 @@ export function TaskListItem({
     touchStartX.current = clientX
     touchStartY.current = clientY
     isSwipeActive.current = false
-    setSwipeX(0)
+    setSwiping(false)
     setSlideOut(null)
+    isScrollGesture.current = false
+    isGestureEvaluated.current = false
 
     if (onStartSelection && !selectionMode) {
       setIsPressing(true)
@@ -213,32 +219,47 @@ export function TaskListItem({
     const dx = clientX - touchStartX.current
     const dy = clientY - touchStartY.current
 
-    if (Math.hypot(dx, dy) > 8) {
-      if (longHoldTimer.current) {
-        clearTimeout(longHoldTimer.current)
-        longHoldTimer.current = null
-      }
-      setIsPressing(false)
-    }
+    if (isScrollGesture.current) return
 
-    if (!isSwipeActive.current && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      isSwipeActive.current = true
-      setSwiping(true)
-      setIsPressing(false)
+    // Scroll axis interception: evaluate motion vector inside the first 6px
+    if (!isGestureEvaluated.current) {
+      const distance = Math.hypot(dx, dy)
+      if (distance >= 6) {
+        isGestureEvaluated.current = true
+        if (Math.abs(dy) > Math.abs(dx)) {
+          isScrollGesture.current = true
+          setIsPressing(false)
+          if (longHoldTimer.current) {
+            clearTimeout(longHoldTimer.current)
+            longHoldTimer.current = null
+          }
+          return
+        } else {
+          isSwipeActive.current = true
+          setSwiping(true)
+          setIsPressing(false)
+          if (longHoldTimer.current) {
+            clearTimeout(longHoldTimer.current)
+            longHoldTimer.current = null
+          }
+        }
+      } else {
+        return
+      }
     }
 
     if (isSwipeActive.current) {
-      // Tiered logarithmic tension math loop
+      // Tiered logarithmic tension spring engine
       const absX = Math.abs(dx)
       const sign = Math.sign(dx)
       let tx = 0
 
       if (absX <= 60) {
-        tx = dx * 0.75
+        tx = dx * 0.85
       } else if (absX <= 120) {
-        tx = sign * 45 + (dx - sign * 60) * 0.45
+        tx = sign * 51 + (dx - sign * 60) * 0.45
       } else {
-        tx = sign * 72 + (dx - sign * 120) * 0.15
+        tx = sign * 78 + (dx - sign * 120) * 0.15
       }
 
       // Hard clamp translation to 45% of viewport width
@@ -374,14 +395,18 @@ export function TaskListItem({
               overflow: "hidden",
               willChange: "transform, opacity, height",
               transition: "height 0.35s ease, margin 0.35s ease, opacity 0.35s ease",
+              isolation: "isolate",
             }
           : collapseHeight !== undefined
           ? {
               height: collapseHeight,
               willChange: "transform, opacity, height",
               transition: "height 0.35s ease, margin 0.35s ease, opacity 0.35s ease",
+              isolation: "isolate",
             }
-          : undefined
+          : {
+              isolation: "isolate",
+            }
       }
       className={cn(
         "relative select-none z-10",
@@ -389,7 +414,7 @@ export function TaskListItem({
       )}
     >
       {/* Fixed Swipe Backgrounds Wrapper */}
-      <div className="absolute inset-0 z-0 overflow-hidden rounded-xl pointer-events-none">
+      <div className="absolute inset-0 z-10 overflow-hidden rounded-xl pointer-events-none">
         {/* Play (Start) background panel (Swipe Right) */}
         {swipeX > 0 && (
           <div
@@ -450,7 +475,7 @@ export function TaskListItem({
           willChange: "transform",
         }}
         className={cn(
-          "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-10",
+          "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-20",
           isPressing ? "scale-[0.97] opacity-90 shadow-inner bg-muted/40" : "scale-100",
           selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20" : "",
           !selected && !isPressing && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
