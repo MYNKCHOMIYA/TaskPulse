@@ -31,7 +31,8 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; badge: string; dot: str
   COMPLETED:   { label: "Completed",   badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", dot: "bg-emerald-400", border: "border-l-transparent" },
 }
 
-function applySpring(dx: number): number {
+// Logarithmic spring — resistance builds up, hard clamp at 45% viewport
+function spring(dx: number): number {
   const abs = Math.abs(dx), sign = Math.sign(dx)
   let tx: number
   if      (abs <= 60)  tx = dx * 0.85
@@ -48,15 +49,13 @@ export function TaskListItem({
   const [expanded,       setExpanded]       = React.useState(false)
   const [menuOpen,       setMenuOpen]       = React.useState(false)
   const [statusOpen,     setStatusOpen]     = React.useState(false)
-  const [isPressing,     setIsPressing]     = React.useState(false)
   const [isCollapsing,   setIsCollapsing]   = React.useState(false)
   const [collapseHeight, setCollapseHeight] = React.useState<number | undefined>(undefined)
-  const [swipeSettled,   setSwipeSettled]   = React.useState(0) // only used for settled state
   const [dropdownCoords, setDropdownCoords] = React.useState<{
     top: number; left: number; type: "status" | "menu" | null
   }>({ top: 0, left: 0, type: null })
 
-  // DOM element refs
+  // DOM refs — all visual updates hit these directly, bypassing React render
   const elementRef   = React.useRef<HTMLDivElement>(null)
   const cardRef      = React.useRef<HTMLDivElement>(null)
   const bgRightRef   = React.useRef<HTMLDivElement>(null)
@@ -68,39 +67,27 @@ export function TaskListItem({
   const statusRef    = React.useRef<HTMLDivElement>(null)
   const statusBtnRef = React.useRef<HTMLButtonElement>(null)
 
-  // All gesture tracking in refs — read directly in native listener, no stale closure
-  const startX      = React.useRef(0)
-  const startY      = React.useRef(0)
-  const prevY       = React.useRef(0)   // for manual scroll delta
-  const liveTx      = React.useRef(0)
-  const isHoriz     = React.useRef(false)
-  const isVert      = React.useRef(false)
-  const axisLocked  = React.useRef(false)
-  const dragging    = React.useRef(false)
-  const longTimer   = React.useRef<NodeJS.Timeout | null>(null)
-  const longFired   = React.useRef(false)
-  // Mirror open state in refs so native listener can read without re-attach
-  const menuOpenRef   = React.useRef(false)
-  const statusOpenRef = React.useRef(false)
+  // Gesture tracking — all refs, zero React state during drag
+  const startX     = React.useRef(0)
+  const startY     = React.useRef(0)
+  const prevClientY = React.useRef(0)   // for manual scroll delta
+  const liveTx     = React.useRef(0)
+  const axis       = React.useRef<"none" | "horiz" | "vert">("none")
+  const dragging   = React.useRef(false)
+  const longTimer  = React.useRef<NodeJS.Timeout | null>(null)
+  const longFired  = React.useRef(false)
 
-  React.useEffect(() => { menuOpenRef.current = menuOpen },    [menuOpen])
-  React.useEffect(() => { statusOpenRef.current = statusOpen }, [statusOpen])
-
-  // ── Direct DOM paint during drag (zero React overhead) ──────────────
-  const paintFrame = (tx: number) => {
+  // ── Direct DOM paint — no React reconciler, 0ms latency ─────────────
+  const paint = (tx: number) => {
     liveTx.current = tx
     const P = Math.min(1, Math.abs(tx) / 120)
-
     if (cardRef.current) {
       cardRef.current.style.transform  = `translateX(${tx}px)`
       cardRef.current.style.transition = "none"
     }
-
     if (bgRightRef.current)   bgRightRef.current.style.opacity   = tx > 0 ? String(P * 0.95) : "0"
     if (bgLeftRef.current)    bgLeftRef.current.style.opacity    = tx < 0 ? String(P * 0.95) : "0"
-
-    const s = 0.65 + P * 0.35
-    const iTx = tx * 0.22
+    const s = 0.65 + P * 0.35, iTx = tx * 0.22
     if (iconRightRef.current) {
       iconRightRef.current.style.opacity   = tx > 0 ? String(P) : "0"
       iconRightRef.current.style.transform = `scale(${s}) translateX(${iTx}px)`
@@ -111,7 +98,7 @@ export function TaskListItem({
     }
   }
 
-  const snapBack = (animated = true) => {
+  const snapBack = (animated: boolean) => {
     if (cardRef.current) {
       cardRef.current.style.transition = animated
         ? "transform 400ms cubic-bezier(0.175, 0.885, 0.32, 1.15)"
@@ -123,7 +110,6 @@ export function TaskListItem({
     if (iconRightRef.current) iconRightRef.current.style.opacity = "0"
     if (iconLeftRef.current)  iconLeftRef.current.style.opacity  = "0"
     liveTx.current = 0
-    setSwipeSettled(0)
   }
 
   const triggerCollapse = React.useCallback(() => {
@@ -135,104 +121,81 @@ export function TaskListItem({
     setTimeout(() => setIsCollapsing(true), 16)
     setTimeout(() => {
       onStatusChange(task, "COMPLETED")
-      setIsCollapsing(false)
-      setCollapseHeight(undefined)
+      setIsCollapsing(false); setCollapseHeight(undefined)
       liveTx.current = 0
-      setSwipeSettled(0)
       if (cardRef.current) { cardRef.current.style.transform = ""; cardRef.current.style.transition = "" }
     }, 380)
   }, [task, onStatusChange])
 
-  // ── THE KEY FIX: touch-action:none + native listener ──────────────────
-  // touch-action: pan-y on Samsung Chrome makes the OS compositor claim touch
-  // events BEFORE JavaScript sees them — even for horizontal movement.
-  // Solution: touch-action:none gives us ALL events. For vertical gestures,
-  // we manually forward scroll using window.scrollBy (delta from prevY).
-  React.useEffect(() => {
-    const el = cardRef.current
-    if (!el) return
-
-    const onMove = (e: TouchEvent) => {
-      // Guard: don't interfere with open menus
-      if (menuOpenRef.current || statusOpenRef.current) return
-      if (e.touches.length !== 1) return
-
-      const touch = e.touches[0]
-      const dx = touch.clientX - startX.current
-      const dy = touch.clientY - startY.current
-
-      // Axis decision: first 8px dead-zone
-      if (!axisLocked.current) {
-        if (Math.sqrt(dx * dx + dy * dy) < 8) return
-        axisLocked.current = true
-        if (Math.abs(dy) >= Math.abs(dx)) {
-          // Vertical confirmed — cancel long-press, forward to native scroll
-          isVert.current = true
-          setIsPressing(false)
-          if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
-        } else {
-          // Horizontal confirmed — begin swipe
-          isHoriz.current  = true
-          dragging.current = true
-          setIsPressing(false)
-          if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
-        }
-      }
-
-      if (isVert.current) {
-        // Manual scroll: forward vertical movement to the window
-        // This replaces what touch-action:pan-y would have done natively
-        const scrollDelta = prevY.current - touch.clientY
-        prevY.current = touch.clientY
-        window.scrollBy({ top: scrollDelta, behavior: "instant" } as ScrollToOptions)
-        return
-      }
-
-      if (isHoriz.current) {
-        // Block native scroll now that we're confirmed horizontal
-        e.preventDefault()
-        paintFrame(applySpring(dx))
-      }
-    }
-
-    // passive:false needed to call e.preventDefault() on horizontal swipes
-    // touch-action:none means the compositor gives us everything — no events eaten
-    el.addEventListener("touchmove", onMove, { passive: false })
-    return () => el.removeEventListener("touchmove", onMove)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // ── Touch handlers — synthetic React events ────────────────────────
+  // With touch-action:none on the card, React synthetic events fire for ALL
+  // touches. We don't need a native listener or e.preventDefault() because
+  // touch-action:none already tells the browser not to handle pan/zoom.
   const onTouchStart = (e: React.TouchEvent) => {
-    if (menuOpenRef.current || statusOpenRef.current) return
+    if (menuOpen || statusOpen) return
     const t = e.touches[0]
-    startX.current    = t.clientX
-    startY.current    = t.clientY
-    prevY.current     = t.clientY
-    liveTx.current    = 0
-    isHoriz.current   = false
-    isVert.current    = false
-    axisLocked.current = false
-    dragging.current  = false
-    longFired.current = false
+    startX.current     = t.clientX
+    startY.current     = t.clientY
+    prevClientY.current = t.clientY
+    liveTx.current     = 0
+    axis.current       = "none"
+    dragging.current   = false
+    longFired.current  = false
 
     if (onStartSelection && !selectionMode) {
-      setIsPressing(true)
       longTimer.current = setTimeout(() => {
         if (longFired.current) return
         longFired.current = true
-        setIsPressing(false)
         if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(40)
         onStartSelection(task)
       }, 550)
     }
   }
 
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (menuOpen || statusOpen) return
+    const t = e.touches[0]
+    const dx = t.clientX - startX.current
+    const dy = t.clientY - startY.current
+
+    // Axis decision: 10px dead-zone, bias strongly toward horizontal
+    // Require vertical to be 1.8× more than horizontal to classify as scroll
+    if (axis.current === "none") {
+      if (Math.sqrt(dx * dx + dy * dy) < 10) return
+      if (Math.abs(dy) > Math.abs(dx) * 1.8) {
+        axis.current = "vert"
+        if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
+      } else {
+        axis.current = "horiz"
+        dragging.current = true
+        if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
+      }
+    }
+
+    if (axis.current === "vert") {
+      // Manual scroll: forward vertical movement to window
+      // (replaces what touch-action:pan-y would do natively)
+      const delta = prevClientY.current - t.clientY
+      prevClientY.current = t.clientY
+      window.scrollBy(0, delta)
+      return
+    }
+
+    if (axis.current === "horiz") {
+      paint(spring(dx))
+    }
+  }
+
   const onTouchEnd = () => {
     if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
-    setIsPressing(false)
 
-    if (!dragging.current) { snapBack(false); return }
+    // Plain tap (no movement detected) — do absolutely nothing visual
+    if (!dragging.current) {
+      axis.current = "none"
+      return
+    }
     dragging.current = false
+    axis.current     = "none"
 
     const tx = liveTx.current
     if (tx >= 72) {
@@ -306,19 +269,15 @@ export function TaskListItem({
   return (
     <div ref={elementRef} style={wrapperStyle} className={cn("relative select-none", isCompleted && "animate-completed-slide-down")}>
 
-      {/* BACKGROUND REVEAL — behind moving card */}
+      {/* BACKGROUND REVEAL */}
       <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none" style={{ zIndex: 10 }} aria-hidden>
         <div ref={bgRightRef}  className="absolute inset-0 bg-blue-500"    style={{ opacity: 0 }} />
         <div ref={bgLeftRef}   className="absolute inset-0 bg-emerald-500" style={{ opacity: 0 }} />
-        <div ref={iconRightRef} className="absolute inset-y-0 left-0 flex items-center pl-5 text-white gap-1.5"
-          style={{ opacity: 0, transform: "scale(0.65)" }}>
-          <Play className="size-5 shrink-0" />
-          <span className="text-sm font-bold">Start</span>
+        <div ref={iconRightRef} className="absolute inset-y-0 left-0 flex items-center pl-5 text-white gap-1.5" style={{ opacity: 0, transform: "scale(0.65)" }}>
+          <Play className="size-5 shrink-0" /><span className="text-sm font-bold">Start</span>
         </div>
-        <div ref={iconLeftRef}  className="absolute inset-y-0 right-0 flex items-center pr-5 text-white gap-1.5"
-          style={{ opacity: 0, transform: "scale(0.65)" }}>
-          <span className="text-sm font-bold">Done</span>
-          <Check className="size-5 shrink-0" />
+        <div ref={iconLeftRef}  className="absolute inset-y-0 right-0 flex items-center pr-5 text-white gap-1.5" style={{ opacity: 0, transform: "scale(0.65)" }}>
+          <span className="text-sm font-bold">Done</span><Check className="size-5 shrink-0" />
         </div>
       </div>
 
@@ -326,31 +285,31 @@ export function TaskListItem({
       <div
         ref={cardRef}
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onTouchCancel={onTouchEnd}
         onClick={handleClick}
         style={{
           position: "relative",
           zIndex: 20,
-          // touch-action:none gives us ALL touch events — no Samsung compositor eating
-          // Vertical scrolling is manually forwarded via window.scrollBy in the listener
+          // touch-action:none: compositor hands all events to JS immediately,
+          // no gesture classification delay (the Samsung fix).
+          // Vertical scroll is handled manually via window.scrollBy in onTouchMove.
           touchAction: "none",
           willChange: "transform",
-          transform: `translateX(${swipeSettled}px)`,
+          // No transform in style — card starts at translateX(0) via its initial DOM state
+          // and is moved exclusively via direct style.transform writes in paint()
         }}
         className={cn(
           "group rounded-xl border border-border border-l-2 bg-card",
           task.status === "IN_PROGRESS" && "animate-progress-glow",
-          isPressing && "animate-long-press-ring",
-          selected
-            ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20"
-            : !isCompleted ? statusCfg.border : "border-l-transparent opacity-55",
+          selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20"
+                   : !isCompleted ? statusCfg.border : "border-l-transparent opacity-55",
           (menuOpen || statusOpen) ? "shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
           selectionMode && "cursor-pointer",
           "animate-fade-up",
         )}
       >
-        {/* IN_PROGRESS bouncing dots indicator (bottom-right corner, subtle) */}
+        {/* IN_PROGRESS bouncing activity dots */}
         {task.status === "IN_PROGRESS" && (
           <div className="absolute bottom-2 right-3 flex items-center gap-[3px] pointer-events-none" style={{ zIndex: 21 }}>
             <span className="activity-dot-1 inline-block size-1 rounded-full bg-blue-400" />
@@ -365,14 +324,14 @@ export function TaskListItem({
             {selectionMode ? (
               <div className={cn("flex size-5 items-center justify-center rounded-lg border-2 transition-all duration-150",
                 selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/45 hover:border-primary")}>
-                {selected && <svg viewBox="0 0 10 8" fill="none" className="size-2.5"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                {selected && <svg viewBox="0 0 10 8" fill="none" className="size-2.5"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </div>
             ) : (
               <button onClick={() => onToggleComplete(task)} title={isCompleted ? "Mark as pending" : "Mark as complete"}
                 className={cn("flex size-5 items-center justify-center rounded-full border-2 transition-all duration-200 active:scale-90 hover:scale-110",
                   isCompleted ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25"
                               : "border-border hover:border-primary hover:bg-accent hover:shadow-sm hover:shadow-primary/15")}>
-                {isCompleted && <svg viewBox="0 0 10 8" fill="none" className="size-3"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                {isCompleted && <svg viewBox="0 0 10 8" fill="none" className="size-3"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </button>
             )}
           </div>
@@ -409,14 +368,14 @@ export function TaskListItem({
           <div className="flex shrink-0 items-center gap-1">
             {task.description && (
               <button onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
-                className={cn("flex size-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150")}>
+                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150">
                 <ChevronDown className={cn("size-3.5 transition-transform duration-200", expanded && "rotate-180")} />
               </button>
             )}
             <button ref={moreBtnRef} onClick={openMenuDropdown} title="More options"
               className={cn("flex size-7 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150", menuOpen && "!opacity-100 bg-muted text-foreground")}>
               <svg viewBox="0 0 16 4" fill="currentColor" className="w-3.5">
-                <circle cx="2" cy="2" r="1.5" /><circle cx="8" cy="2" r="1.5" /><circle cx="14" cy="2" r="1.5" />
+                <circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="14" cy="2" r="1.5"/>
               </svg>
             </button>
           </div>
@@ -444,7 +403,7 @@ export function TaskListItem({
                   <span className={cn("relative inline-flex size-2 rounded-full", oCfg.dot)} />
                 </span>
                 {oCfg.label}
-                {isActive && <svg className="ml-auto size-3 text-primary" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                {isActive && <svg className="ml-auto size-3 text-primary" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </button>
             )
           })}
