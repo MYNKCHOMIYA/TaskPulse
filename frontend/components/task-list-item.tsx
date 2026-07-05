@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import {
   CalendarDays,
   ChevronDown,
@@ -101,6 +102,7 @@ export function TaskListItem({
   const moreBtnRef = React.useRef<HTMLButtonElement>(null)
   const statusRef = React.useRef<HTMLDivElement>(null)
   const statusBtnRef = React.useRef<HTMLButtonElement>(null)
+  const elementRef = React.useRef<HTMLDivElement>(null)
 
   // ── Swipe Gestures & Long Hold States ─────────────────────
   const touchStartX = React.useRef(0)
@@ -109,9 +111,83 @@ export function TaskListItem({
   const [swiping, setSwiping] = React.useState(false)
   const [isPressing, setIsPressing] = React.useState(false)
   const [slideOut, setSlideOut] = React.useState<"left" | "right" | null>(null)
+  const [isCollapsing, setIsCollapsing] = React.useState(false)
+  const [collapseHeight, setCollapseHeight] = React.useState<number | undefined>(undefined)
 
   const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
   const isSwipeActive = React.useRef(false)
+
+  // Coords for portalized dropdown menus
+  const [dropdownCoords, setDropdownCoords] = React.useState<{
+    top: number
+    left: number
+    width: number
+    type: "status" | "menu" | null
+  }>({ top: 0, left: 0, width: 0, type: null })
+
+  // Slide-out and height collapse sequence for completed tasks
+  const triggerCompletedCollapseSequence = React.useCallback(() => {
+    setSlideOut("left")
+    setSwipeX(-window.innerWidth * 0.5)
+
+    if (elementRef.current) {
+      setCollapseHeight(elementRef.current.offsetHeight)
+    }
+    // Force a micro-tick before starting CSS height transition
+    setTimeout(() => {
+      setIsCollapsing(true)
+    }, 10)
+
+    setTimeout(() => {
+      onStatusChange(task, "COMPLETED")
+      // Reset animations after unmount/re-render
+      setSwipeX(0)
+      setSlideOut(null)
+      setIsCollapsing(false)
+      setCollapseHeight(undefined)
+    }, 360)
+  }, [task, onStatusChange])
+
+  // Coordinate-based Portal triggers
+  const handleToggleStatusDropdown = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (dropdownCoords.type === "status") {
+      setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+      setStatusOpen(false)
+    } else {
+      const rect = statusBtnRef.current?.getBoundingClientRect()
+      if (rect) {
+        setDropdownCoords({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+          type: "status",
+        })
+        setStatusOpen(true)
+        setMenuOpen(false)
+      }
+    }
+  }
+
+  const handleToggleMenuDropdown = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (dropdownCoords.type === "menu") {
+      setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+      setMenuOpen(false)
+    } else {
+      const rect = moreBtnRef.current?.getBoundingClientRect()
+      if (rect) {
+        setDropdownCoords({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX - 110, // offset left
+          width: rect.width,
+          type: "menu",
+        })
+        setMenuOpen(true)
+        setStatusOpen(false)
+      }
+    }
+  }
 
   const handleStart = (clientX: number, clientY: number) => {
     if (menuOpen || statusOpen) return
@@ -152,11 +228,26 @@ export function TaskListItem({
     }
 
     if (isSwipeActive.current) {
-      // Magnetic resistance: stiffer past 100px
-      let targetX = dx
-      if (dx > 100) targetX = 100 + (dx - 100) * 0.15
-      else if (dx < -100) targetX = -100 + (dx + 100) * 0.15
-      setSwipeX(targetX)
+      // Tiered logarithmic tension math loop
+      const absX = Math.abs(dx)
+      const sign = Math.sign(dx)
+      let tx = 0
+
+      if (absX <= 60) {
+        tx = dx * 0.75
+      } else if (absX <= 120) {
+        tx = sign * 45 + (dx - sign * 60) * 0.45
+      } else {
+        tx = sign * 72 + (dx - sign * 120) * 0.15
+      }
+
+      // Hard clamp translation to 45% of viewport width
+      const maxLimit = window.innerWidth * 0.45
+      if (Math.abs(tx) > maxLimit) {
+        tx = Math.sign(tx) * maxLimit
+      }
+
+      setSwipeX(tx)
     }
   }
 
@@ -171,23 +262,16 @@ export function TaskListItem({
       setSwiping(false)
       isSwipeActive.current = false
 
-      if (swipeX > 90) {
-        setSlideOut("right")
-        setSwipeX(window.innerWidth)
-        setTimeout(() => {
-          onStatusChange(task, "IN_PROGRESS")
-          setSwipeX(0)
-          setSlideOut(null)
-        }, 220)
-      } else if (swipeX < -90) {
-        setSlideOut("left")
-        setSwipeX(-window.innerWidth)
-        setTimeout(() => {
-          onStatusChange(task, "COMPLETED")
-          setSwipeX(0)
-          setSlideOut(null)
-        }, 220)
+      // Snap check (72px trigger)
+      if (swipeX >= 72) {
+        // Swipe Right -> IN_PROGRESS
+        setSwipeX(0)
+        onStatusChange(task, "IN_PROGRESS")
+      } else if (swipeX <= -72) {
+        // Swipe Left -> COMPLETED
+        triggerCompletedCollapseSequence()
       } else {
+        // Recoil back to 0px
         setSwipeX(0)
       }
     } else {
@@ -216,7 +300,7 @@ export function TaskListItem({
     ? new Date(task.due_date) < new Date()
     : false
 
-  // Click outside listener for action menu
+  // Click outside and scroll/resize listeners
   React.useEffect(() => {
     if (!menuOpen) return
     const handler = (e: MouseEvent) => {
@@ -225,13 +309,13 @@ export function TaskListItem({
         moreBtnRef.current && !moreBtnRef.current.contains(e.target as Node)
       ) {
         setMenuOpen(false)
+        setDropdownCoords(prev => prev.type === "menu" ? { top: 0, left: 0, width: 0, type: null } : prev)
       }
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [menuOpen])
 
-  // Click outside listener for status menu
   React.useEffect(() => {
     if (!statusOpen) return
     const handler = (e: MouseEvent) => {
@@ -240,55 +324,113 @@ export function TaskListItem({
         statusBtnRef.current && !statusBtnRef.current.contains(e.target as Node)
       ) {
         setStatusOpen(false)
+        setDropdownCoords(prev => prev.type === "status" ? { top: 0, left: 0, width: 0, type: null } : prev)
       }
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [statusOpen])
 
+  React.useEffect(() => {
+    if (statusOpen || menuOpen) {
+      const close = () => {
+        setStatusOpen(false)
+        setMenuOpen(false)
+        setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+      }
+      window.addEventListener("scroll", close, { passive: true })
+      window.addEventListener("resize", close, { passive: true })
+      return () => {
+        window.removeEventListener("scroll", close)
+        window.removeEventListener("resize", close)
+      }
+    }
+  }, [statusOpen, menuOpen])
+
+  // Get physics transition string
+  const getTransitionString = () => {
+    if (swiping) return "none"
+    if (slideOut) return "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
+    return "transform 400ms cubic-bezier(0.2, 0.85, 0.32, 1.2)"
+  }
+
+  // Unravel calculations
+  const progressRatio = Math.min(1, Math.abs(swipeX) / 120)
+  const bgScale = 0.7 + progressRatio * 0.3
+  const parallaxX = swipeX * 0.18
+
   return (
-    <div className="relative select-none z-10">
-      {/* Fixed Swipe Backgrounds Wrapper (clips backgrounds inside card boundaries, but lets dropdowns overflow card) */}
+    <div
+      ref={elementRef}
+      style={
+        isCollapsing
+          ? {
+              height: 0,
+              opacity: 0,
+              marginTop: 0,
+              marginBottom: 0,
+              paddingTop: 0,
+              paddingBottom: 0,
+              overflow: "hidden",
+              willChange: "transform, opacity, height",
+              transition: "height 0.35s ease, margin 0.35s ease, opacity 0.35s ease",
+            }
+          : collapseHeight !== undefined
+          ? {
+              height: collapseHeight,
+              willChange: "transform, opacity, height",
+              transition: "height 0.35s ease, margin 0.35s ease, opacity 0.35s ease",
+            }
+          : undefined
+      }
+      className={cn(
+        "relative select-none z-10",
+        isCompleted && "animate-completed-slide-down"
+      )}
+    >
+      {/* Fixed Swipe Backgrounds Wrapper */}
       <div className="absolute inset-0 z-0 overflow-hidden rounded-xl pointer-events-none">
         {/* Play (Start) background panel (Swipe Right) */}
-        <div
-          className={cn(
-            "absolute inset-y-0 left-0 w-full flex items-center bg-blue-500 text-white pl-5 transition-opacity duration-200",
-            swipeX > 0 ? "opacity-100" : "opacity-0"
-          )}
-        >
-          <div className="flex items-center gap-2 font-semibold text-xs select-none">
-            <Play
-              className={cn(
-                "size-4 shrink-0 transition-transform duration-200",
-                (swipeX > 90 || slideOut === "right") && "scale-125 animate-pulse"
-              )}
-            />
-            <span className={cn("transition-transform duration-200", (swipeX > 90 || slideOut === "right") && "scale-105 font-bold")}>
-              {swipeX > 90 ? "Release to Start" : "Start"}
-            </span>
-          </div>
-        </div>
-
+        {swipeX > 0 && (
+          <div
+            style={{ opacity: progressRatio * 0.95 }}
+            className="absolute inset-0 bg-blue-500 transition-opacity duration-150"
+          />
+        )}
         {/* Check (Complete) background panel (Swipe Left) */}
-        <div
-          className={cn(
-            "absolute inset-y-0 right-0 w-full flex items-center justify-end bg-emerald-500 text-white pr-5 transition-opacity duration-200",
-            swipeX < 0 ? "opacity-100" : "opacity-0"
-          )}
-        >
-          <div className="flex items-center gap-2 font-semibold text-xs select-none">
-            <span className={cn("transition-transform duration-200", (swipeX < -90 || slideOut === "left") && "scale-105 font-bold")}>
-              {swipeX < -90 ? "Release to Complete" : "Complete"}
-            </span>
-            <Check
-              className={cn(
-                "size-4 shrink-0 transition-transform duration-200",
-                (swipeX < -90 || slideOut === "left") && "scale-125"
-              )}
-            />
+        {swipeX < 0 && (
+          <div
+            style={{ opacity: progressRatio * 0.95 }}
+            className="absolute inset-0 bg-emerald-500 transition-opacity duration-150"
+          />
+        )}
+
+        {/* Action icons with parallax scale/translate */}
+        {swipeX > 0 && (
+          <div
+            style={{
+              opacity: progressRatio,
+              transform: `scale(${bgScale}) translateX(${parallaxX}px)`,
+            }}
+            className="absolute inset-y-0 left-0 flex items-center pl-6 text-white"
+          >
+            <Play className="size-4 shrink-0 mr-2" />
+            <span className="text-xs font-bold">Start</span>
           </div>
-        </div>
+        )}
+
+        {swipeX < 0 && (
+          <div
+            style={{
+              opacity: progressRatio,
+              transform: `scale(${bgScale}) translateX(${parallaxX}px)`,
+            }}
+            className="absolute inset-y-0 right-0 flex items-center pr-6 text-white"
+          >
+            <span className="text-xs font-bold mr-2">Complete</span>
+            <Check className="size-4 shrink-0" />
+          </div>
+        )}
       </div>
 
       {/* Main card content container */}
@@ -303,7 +445,9 @@ export function TaskListItem({
         onClick={handleClick}
         style={{
           transform: `translateX(${swipeX}px)`,
-          transition: swiping ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: getTransitionString(),
+          touchAction: "pan-y",
+          willChange: "transform",
         }}
         className={cn(
           "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-10",
@@ -315,6 +459,13 @@ export function TaskListItem({
           "animate-fade-up"
         )}
       >
+        {/* Continuous gradient loading track riding along the exact bottom edge boundary */}
+        {task.status === "IN_PROGRESS" && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden rounded-b-xl pointer-events-none z-20">
+            <div className="h-full w-1/2 bg-gradient-to-r from-blue-500 via-blue-300 to-blue-500 animate-loading-slide" />
+          </div>
+        )}
+
         {/* Rigid row grid container */}
         <div className="flex items-center gap-3 px-4 py-3">
 
@@ -342,194 +493,130 @@ export function TaskListItem({
                 title={isCompleted ? "Mark as pending" : "Mark as complete"}
                 className={cn(
                   "flex size-5 items-center justify-center rounded-full border-2",
-              "transition-all duration-200 active:scale-90 hover:scale-110",
-              isCompleted
-                ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                : "border-border hover:border-primary hover:bg-accent hover:shadow-sm hover:shadow-primary/15"
-            )}
-          >
-            {isCompleted && (
-              <svg viewBox="0 0 10 8" fill="none" className="size-3">
-                <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5"
-                  strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-
-        {/* Col 2: Content Details */}
-        <div className="flex-1 min-w-0 space-y-1">
-          {/* Row A: Title & Priority */}
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm font-medium leading-snug",
-                isCompleted && "line-through text-muted-foreground"
-              )}
-            >
-              {task.title}
-            </span>
-
-            {priorityCfg && (
-              <span className={cn(
-                "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                priorityCfg.badge
-              )}>
-                <span className={cn("size-1.5 rounded-full shrink-0", priorityCfg.dot)} />
-                {priorityCfg.label}
-              </span>
+                  "transition-all duration-200 active:scale-90 hover:scale-110",
+                  isCompleted
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                    : "border-border hover:border-primary hover:bg-accent hover:shadow-sm hover:shadow-primary/15"
+                )}
+              >
+                {isCompleted && (
+                  <svg viewBox="0 0 10 8" fill="none" className="size-3">
+                    <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5"
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
             )}
           </div>
 
-          {/* Row B: Status Dropdown & Due Date */}
-          <div className="flex items-center gap-3">
-            {/* Localized absolute status selector */}
-            <div className="relative inline-flex">
-              <button
-                ref={statusBtnRef}
-                onClick={e => { e.stopPropagation(); setStatusOpen(v => !v) }}
-                title="Change status"
+          {/* Col 2: Content Details */}
+          <div className="flex-1 min-w-0 space-y-1">
+            {/* Row A: Title & Priority */}
+            <div className="flex items-center gap-2">
+              <span
                 className={cn(
-                  "inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-[10px] font-semibold",
-                  "select-none transition-all duration-150 hover:opacity-75 active:scale-95",
-                  statusCfg.badge
+                  "min-w-0 truncate text-sm font-medium leading-snug",
+                  isCompleted && "line-through text-muted-foreground"
                 )}
               >
-                <span className="relative flex size-1.5 shrink-0">
-                  {task.status === "IN_PROGRESS" && (
-                    <span className={cn("animate-ping absolute inset-0 rounded-full opacity-60", statusCfg.dot)} />
-                  )}
-                  {task.status === "PENDING" && (
-                    <span className={cn("animate-pulse absolute inset-0 rounded-full opacity-75", statusCfg.dot)} />
-                  )}
-                  <span className={cn("relative inline-flex size-1.5 rounded-full", statusCfg.dot)} />
-                </span>
-                {statusCfg.label}
-                <ChevronDown className="size-2.5 opacity-60" />
-              </button>
+                {task.title}
+              </span>
 
-              {statusOpen && (
-                <div
-                  ref={statusRef}
-                  className="absolute left-0 top-full mt-1.5 z-50 w-40 overflow-hidden rounded-xl border border-border bg-popover py-1 shadow-xl animate-scale-in"
-                >
-                  <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                    Set status
-                  </p>
-                  {STATUS_OPTIONS.map(opt => {
-                    const oCfg = STATUS_CONFIG[opt.value]
-                    const isActive = task.status === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => { onStatusChange(task, opt.value); setStatusOpen(false) }}
-                        className={cn(
-                          "flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors",
-                          isActive
-                            ? "bg-accent text-foreground"
-                            : "text-foreground/80 hover:bg-muted"
-                        )}
-                      >
-                        <span className="relative flex size-2 shrink-0">
-                          {opt.value === "IN_PROGRESS" && (
-                            <span className={cn("animate-ping absolute inset-0 rounded-full opacity-60", oCfg.dot)} />
-                          )}
-                          <span className={cn("relative inline-flex size-2 rounded-full", oCfg.dot)} />
-                        </span>
-                        {oCfg.label}
-                        {isActive && (
-                          <svg className="ml-auto size-3 text-primary" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5"
-                              strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
+              {priorityCfg && (
+                <span className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  priorityCfg.badge
+                )}>
+                  <span className={cn("size-1.5 rounded-full shrink-0", priorityCfg.dot)} />
+                  {priorityCfg.label}
+                </span>
               )}
             </div>
 
-            {/* Due Date Indicator */}
-            {task.due_date ? (
-              <span className={cn(
-                "inline-flex items-center gap-1 text-[11px]",
-                isOverdue ? "font-medium text-destructive" : "text-muted-foreground"
-              )}>
-                <CalendarDays className="size-3 shrink-0" />
-                {isOverdue ? "Overdue · " : ""}
-                {formatDueDate(task.due_date)}
-              </span>
-            ) : (
-              <span className="text-[11px] text-muted-foreground/40">No due date</span>
-            )}
-          </div>
-        </div>
-
-        {/* Col 3: Row Actions (Expand details & Dropdown menu) */}
-        <div className="flex shrink-0 items-center gap-1">
-          {task.description && (
-            <button
-              onClick={() => setExpanded(v => !v)}
-              title={expanded ? "Hide notes" : "Show notes"}
-              className={cn(
-                "flex size-7 items-center justify-center rounded-lg text-muted-foreground",
-                "opacity-0 group-hover:opacity-100",
-                "hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150"
-              )}
-            >
-              <ChevronDown
-                className={cn(
-                  "size-3.5 transition-transform duration-200",
-                  expanded && "rotate-180"
-                )}
-              />
-            </button>
-          )}
-
-          <div className="relative inline-flex">
-            <button
-              ref={moreBtnRef}
-              onClick={() => setMenuOpen(v => !v)}
-              title="More options"
-              className={cn(
-                "flex size-7 items-center justify-center rounded-lg",
-                "opacity-0 group-hover:opacity-100",
-                "text-muted-foreground hover:bg-muted hover:text-foreground",
-                "active:scale-90 transition-all duration-150",
-                menuOpen && "!opacity-100 bg-muted text-foreground"
-              )}
-            >
-              <svg viewBox="0 0 16 4" fill="currentColor" className="w-3.5">
-                <circle cx="2"  cy="2" r="1.5" />
-                <circle cx="8"  cy="2" r="1.5" />
-                <circle cx="14" cy="2" r="1.5" />
-              </svg>
-            </button>
-
-            {menuOpen && (
-              <div
-                ref={menuRef}
-                className="absolute right-0 top-full mt-1.5 z-50 w-36 overflow-hidden rounded-xl border border-border bg-popover py-1 shadow-xl animate-scale-in"
-              >
+            {/* Row B: Status Dropdown & Due Date */}
+            <div className="flex items-center gap-3">
+              {/* Localized absolute status selector */}
+              <div className="relative inline-flex">
                 <button
-                  onClick={() => { onEdit(task); setMenuOpen(false) }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground/80 hover:bg-muted hover:text-foreground transition-colors"
+                  ref={statusBtnRef}
+                  onClick={handleToggleStatusDropdown}
+                  title="Change status"
+                  className={cn(
+                    "inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-[10px] font-semibold",
+                    "select-none transition-all duration-150 hover:opacity-75 active:scale-95",
+                    statusCfg.badge
+                  )}
                 >
-                  <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
-                  Edit task
-                </button>
-                <div className="mx-3 my-1 h-px bg-border" />
-                <button
-                  onClick={() => { onDelete(task); setMenuOpen(false) }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  <Trash2 className="size-3.5 shrink-0" />
-                  Delete
+                  <span className="relative flex size-1.5 shrink-0">
+                    {task.status === "IN_PROGRESS" && (
+                      <span className={cn("animate-ping absolute inset-0 rounded-full opacity-60", statusCfg.dot)} />
+                    )}
+                    {task.status === "PENDING" && (
+                      <span className={cn("animate-pulse absolute inset-0 rounded-full opacity-75", statusCfg.dot)} />
+                    )}
+                    <span className={cn("relative inline-flex size-1.5 rounded-full", statusCfg.dot)} />
+                  </span>
+                  {statusCfg.label}
+                  <ChevronDown className="size-2.5 opacity-60" />
                 </button>
               </div>
+
+              {/* Due Date Indicator */}
+              {task.due_date ? (
+                <span className={cn(
+                  "inline-flex items-center gap-1 text-[11px]",
+                  isOverdue ? "font-medium text-destructive" : "text-muted-foreground"
+                )}>
+                  <CalendarDays className="size-3 shrink-0" />
+                  {formatDueDate(task.due_date)}
+                </span>
+              ) : (
+                <span className="text-[11px] text-muted-foreground/40">No due date</span>
+              )}
+            </div>
+          </div>
+
+          {/* Col 3: Row Actions (Expand details & Dropdown menu) */}
+          <div className="flex shrink-0 items-center gap-1">
+            {task.description && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+                title={expanded ? "Hide notes" : "Show notes"}
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-lg text-muted-foreground",
+                  "opacity-0 group-hover:opacity-100",
+                  "hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150"
+                )}
+              >
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 transition-transform duration-200",
+                    expanded && "rotate-180"
+                  )}
+                />
+              </button>
             )}
+
+            <div className="relative inline-flex">
+              <button
+                ref={moreBtnRef}
+                onClick={handleToggleMenuDropdown}
+                title="More options"
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-lg",
+                  "opacity-0 group-hover:opacity-100",
+                  "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "active:scale-90 transition-all duration-150",
+                  menuOpen && "!opacity-100 bg-muted text-foreground"
+                )}
+              >
+                <svg viewBox="0 0 16 4" fill="currentColor" className="w-3.5">
+                  <circle cx="2"  cy="2" r="1.5" />
+                  <circle cx="8"  cy="2" r="1.5" />
+                  <circle cx="14" cy="2" r="1.5" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -542,7 +629,106 @@ export function TaskListItem({
           </p>
         </div>
       )}
-      </div>
+
+      {/* ── PORTALIZED STATUS DROPDOWN ────────────────────── */}
+      {statusOpen && dropdownCoords.type === "status" && typeof document !== "undefined" && createPortal(
+        <div
+          ref={statusRef}
+          style={{
+            position: "absolute",
+            top: dropdownCoords.top,
+            left: dropdownCoords.left,
+            width: "160px",
+            zIndex: 99999,
+          }}
+          className="rounded-xl border border-border bg-popover py-1 shadow-xl animate-scale-in"
+        >
+          <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            Set status
+          </p>
+          {STATUS_OPTIONS.map(opt => {
+            const oCfg = STATUS_CONFIG[opt.value]
+            const isActive = task.status === opt.value
+            return (
+              <button
+                key={opt.value}
+                onClick={() => {
+                  if (opt.value === "COMPLETED") {
+                    setStatusOpen(false)
+                    setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+                    triggerCompletedCollapseSequence()
+                  } else {
+                    onStatusChange(task, opt.value)
+                    setStatusOpen(false)
+                    setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+                  }
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors text-left",
+                  isActive
+                    ? "bg-accent text-foreground"
+                    : "text-foreground/80 hover:bg-muted"
+                )}
+              >
+                <span className="relative flex size-2 shrink-0">
+                  {opt.value === "IN_PROGRESS" && (
+                    <span className={cn("animate-ping absolute inset-0 rounded-full opacity-60", oCfg.dot)} />
+                  )}
+                  <span className={cn("relative inline-flex size-2 rounded-full", oCfg.dot)} />
+                </span>
+                {oCfg.label}
+                {isActive && (
+                  <svg className="ml-auto size-3 text-primary" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5"
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
+        </div>,
+        document.body
+      )}
+
+      {/* ── PORTALIZED MORE ACTIONS MENU ───────────────────── */}
+      {menuOpen && dropdownCoords.type === "menu" && typeof document !== "undefined" && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: "absolute",
+            top: dropdownCoords.top,
+            left: dropdownCoords.left,
+            width: "144px",
+            zIndex: 99999,
+          }}
+          className="rounded-xl border border-border bg-popover py-1 shadow-xl animate-scale-in"
+        >
+          <button
+            onClick={() => {
+              onEdit(task)
+              setMenuOpen(false)
+              setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground/80 hover:bg-muted hover:text-foreground transition-colors text-left"
+          >
+            <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+            Edit task
+          </button>
+          <div className="mx-3 my-1 h-px bg-border" />
+          <button
+            onClick={() => {
+              onDelete(task)
+              setMenuOpen(false)
+              setDropdownCoords({ top: 0, left: 0, width: 0, type: null })
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors text-left"
+          >
+            <Trash2 className="size-3.5 shrink-0" />
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
