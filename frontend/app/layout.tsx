@@ -39,6 +39,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <head>
+        {/* PWA & iOS standalone app capability meta tags */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="TaskPulse" />
+
         {/* Inline script to apply theme before first paint — prevents flash */}
         <script
           dangerouslySetInnerHTML={{
@@ -54,6 +59,21 @@ export default function RootLayout({
                   }
                 } catch(e) {}
               })();
+            `,
+          }}
+        />
+
+        {/* PWA Service Worker Registration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(function(reg) { console.log('SW registered:', reg.scope); })
+                    .catch(function(err) { console.error('SW registration failed:', err); });
+                });
+              }
             `,
           }}
         />
