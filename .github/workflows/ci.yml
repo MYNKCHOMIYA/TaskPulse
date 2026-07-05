@@ -57,7 +57,7 @@ jobs:
       - name: Run Automated Pytest Engine
         working-directory: ./backend
         env:
-          MY_SECRET_KEY: temporary_ci_crypt_secret_signing_key_string_for_testing_boundaries
+          SECRET_KEY: temporary_ci_crypt_secret_signing_key_string_for_testing_boundaries
           DATABASE_URL: postgresql+psycopg2://admin:admin@localhost:5432/taskpulse
         run: |
           python -m pytest -v

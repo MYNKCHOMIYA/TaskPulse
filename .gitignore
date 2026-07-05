@@ -1,0 +1,77 @@
+# Dependency directories
+node_modules/
+frontend/node_modules/
+jspm_packages/
+web_modules/
+
+# Next.js build output
+.next/
+frontend/.next/
+out/
+frontend/out/
+build/
+frontend/build/
+
+# Python / Virtual Environment
+__pycache__/
+backend/app/__pycache__/
+backend/models/__pycache__/
+backend/core/__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nosetests
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Environment files
+.env
+.env*.local
+*.env
+frontend/.env*.local
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# SQLite / Database
+*.db
+*.sqlite3
+backend/*.db
+backend/*.sqlite3

@@ -10,10 +10,10 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-raw_key = os.getenv("MY_SECRET_KEY")
+raw_key = os.getenv("SECRET_KEY")
 
 if raw_key is None:
-    raise ValueError("MY_SECRET_KEY environment variable is missing")
+    raise ValueError("SECRET_KEY environment variable is missing")
 
 SECRET_KEY: str = raw_key
 
