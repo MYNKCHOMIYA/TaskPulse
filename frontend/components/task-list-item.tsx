@@ -85,15 +85,21 @@ export function TaskListItem({
       cardRef.current.style.transform  = `translateX(${tx}px)`
       cardRef.current.style.transition = "none"
     }
-    if (bgRightRef.current)   bgRightRef.current.style.opacity   = tx > 0 ? String(P * 0.95) : "0"
-    if (bgLeftRef.current)    bgLeftRef.current.style.opacity    = tx < 0 ? String(P * 0.95) : "0"
+
+    // Only reveal background in directions that will actually trigger an action
+    const canRight = task.status !== "IN_PROGRESS"   // right → IN_PROGRESS (not if already there)
+    const canLeft  = task.status !== "COMPLETED"      // left  → COMPLETED  (not if already there)
+
+    if (bgRightRef.current)   bgRightRef.current.style.opacity   = (tx > 0 && canRight) ? String(P * 0.95) : "0"
+    if (bgLeftRef.current)    bgLeftRef.current.style.opacity    = (tx < 0 && canLeft)  ? String(P * 0.95) : "0"
+
     const s = 0.65 + P * 0.35, iTx = tx * 0.22
     if (iconRightRef.current) {
-      iconRightRef.current.style.opacity   = tx > 0 ? String(P) : "0"
+      iconRightRef.current.style.opacity   = (tx > 0 && canRight) ? String(P) : "0"
       iconRightRef.current.style.transform = `scale(${s}) translateX(${iTx}px)`
     }
     if (iconLeftRef.current) {
-      iconLeftRef.current.style.opacity   = tx < 0 ? String(P) : "0"
+      iconLeftRef.current.style.opacity   = (tx < 0 && canLeft) ? String(P) : "0"
       iconLeftRef.current.style.transform = `scale(${s}) translateX(${iTx}px)`
     }
   }
@@ -159,7 +165,6 @@ export function TaskListItem({
     const dy = t.clientY - startY.current
 
     // Axis decision: 10px dead-zone, bias strongly toward horizontal
-    // Require vertical to be 1.8× more than horizontal to classify as scroll
     if (axis.current === "none") {
       if (Math.sqrt(dx * dx + dy * dy) < 10) return
       if (Math.abs(dy) > Math.abs(dx) * 1.8) {
@@ -173,8 +178,6 @@ export function TaskListItem({
     }
 
     if (axis.current === "vert") {
-      // Manual scroll: forward vertical movement to window
-      // (replaces what touch-action:pan-y would do natively)
       const delta = prevClientY.current - t.clientY
       prevClientY.current = t.clientY
       window.scrollBy(0, delta)
@@ -182,14 +185,21 @@ export function TaskListItem({
     }
 
     if (axis.current === "horiz") {
-      paint(spring(dx))
+      // Block right swipe (→ IN_PROGRESS) if already IN_PROGRESS
+      // Block left swipe  (→ COMPLETED)   if already COMPLETED
+      // Allow a tiny rubber-band resistance so the user feels the block
+      const blocked =
+        (dx > 0 && task.status === "IN_PROGRESS") ||
+        (dx < 0 && task.status === "COMPLETED")
+
+      paint(blocked ? dx * 0.08 : spring(dx))
     }
   }
 
   const onTouchEnd = () => {
     if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
 
-    // Plain tap (no movement detected) — do absolutely nothing visual
+    // Plain tap — do nothing
     if (!dragging.current) {
       axis.current = "none"
       return
@@ -199,10 +209,20 @@ export function TaskListItem({
 
     const tx = liveTx.current
     if (tx >= 72) {
-      snapBack(true)
-      onStatusChange(task, "IN_PROGRESS")
+      // Right swipe → IN_PROGRESS (blocked if already IN_PROGRESS)
+      if (task.status === "IN_PROGRESS") {
+        snapBack(true)
+      } else {
+        snapBack(true)
+        onStatusChange(task, "IN_PROGRESS")
+      }
     } else if (tx <= -72) {
-      triggerCollapse()
+      // Left swipe → COMPLETED (blocked if already COMPLETED)
+      if (task.status === "COMPLETED") {
+        snapBack(true)
+      } else {
+        triggerCollapse()
+      }
     } else {
       snapBack(true)
     }
@@ -291,13 +311,12 @@ export function TaskListItem({
         style={{
           position: "relative",
           zIndex: 20,
-          // touch-action:none: compositor hands all events to JS immediately,
-          // no gesture classification delay (the Samsung fix).
-          // Vertical scroll is handled manually via window.scrollBy in onTouchMove.
           touchAction: "none",
+          // translateZ(0) forces GPU compositor layer on ALL cards (not just IN_PROGRESS).
+          // Without this, Samsung Chrome doesn't deliver touchmove events reliably
+          // for PENDING and COMPLETED cards that lack the animate-progress-glow layer.
+          transform: "translateZ(0)",
           willChange: "transform",
-          // No transform in style — card starts at translateX(0) via its initial DOM state
-          // and is moved exclusively via direct style.transform writes in paint()
         }}
         className={cn(
           "group rounded-xl border border-border border-l-2 bg-card",
