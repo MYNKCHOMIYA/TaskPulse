@@ -328,3 +328,14 @@ html:active-view-transition ::after {
   animation: completed-slide-down 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+/* ── LONG-PRESS RING PULSE ANIMATION ── */
+@keyframes long-press-ring {
+  0%   { box-shadow: 0 0 0 0px oklch(0.52 0.21 264 / 0.4); }
+  70%  { box-shadow: 0 0 0 8px oklch(0.52 0.21 264 / 0); }
+  100% { box-shadow: 0 0 0 0px oklch(0.52 0.21 264 / 0); }
+}
+
+.animate-long-press-ring {
+  animation: long-press-ring 0.55s ease-out forwards;
+  will-change: box-shadow;
+}

@@ -113,7 +113,11 @@ export function TaskListItem({
   const [isCollapsing, setIsCollapsing] = React.useState(false)
   const [collapseHeight, setCollapseHeight] = React.useState<number | undefined>(undefined)
 
+  // Visual long-press ring animation state (does NOT block swipe)
+  const [isPressing, setIsPressing] = React.useState(false)
+
   const isSwipeActive = React.useRef(false)
+  const cardRef = React.useRef<HTMLDivElement>(null)
 
   // ── Scroll axis interception refs ──
   const isScrollGesture = React.useRef(false)
@@ -208,9 +212,12 @@ export function TaskListItem({
 
     // Long-press is entirely decoupled: it does NOT block or delay swipe tracking
     if (onStartSelection && !selectionMode) {
+      // Start press visual animation immediately (pure cosmetic, no delay)
+      setIsPressing(true)
       longHoldTimer.current = setTimeout(() => {
         if (longPressDidFire.current) return
         longPressDidFire.current = true
+        setIsPressing(false)
         if (typeof navigator !== "undefined" && navigator.vibrate) {
           navigator.vibrate(40)
         }
@@ -234,15 +241,17 @@ export function TaskListItem({
         if (Math.abs(dy) > Math.abs(dx)) {
           // Vertical dominates — hand off to native scroll, cancel long-press
           isScrollGesture.current = true
+          setIsPressing(false)
           if (longHoldTimer.current) {
             clearTimeout(longHoldTimer.current)
             longHoldTimer.current = null
           }
           return
         } else {
-          // Horizontal dominates — lock onto swipe lane, cancel long-press
+          // Horizontal dominates — lock onto swipe lane, cancel long-press visual + timer
           isSwipeActive.current = true
           setSwiping(true)
+          setIsPressing(false)
           if (longHoldTimer.current) {
             clearTimeout(longHoldTimer.current)
             longHoldTimer.current = null
@@ -284,6 +293,7 @@ export function TaskListItem({
       clearTimeout(longHoldTimer.current)
       longHoldTimer.current = null
     }
+    setIsPressing(false)
 
     if (swiping) {
       setSwiping(false)
@@ -372,6 +382,30 @@ export function TaskListItem({
       }
     }
   }, [statusOpen, menuOpen])
+
+  // ── Native non-passive touchmove listener ─────────────────────────
+  // React synthetic onTouchMove is always passive (cannot call preventDefault).
+  // We need a non-passive native listener so we can cancel vertical scrolling
+  // once we've confirmed a horizontal swipe on Samsung/Android devices.
+  React.useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (isSwipeActive.current) {
+        // We have a confirmed horizontal swipe — block native page scroll
+        e.preventDefault()
+        handleMove(e.touches[0].clientX, e.touches[0].clientY)
+      } else if (!isScrollGesture.current) {
+        // Still in the axis evaluation phase — call handleMove to evaluate axis
+        handleMove(e.touches[0].clientX, e.touches[0].clientY)
+      }
+    }
+
+    el.addEventListener("touchmove", onNativeTouchMove, { passive: false })
+    return () => el.removeEventListener("touchmove", onNativeTouchMove)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen, statusOpen, swiping])
 
   // Physics transition curve
   const getTransitionString = () => {
@@ -464,10 +498,10 @@ export function TaskListItem({
         )}
       </div>
 
-      {/* Main card content container */}
+      {/* Main card content container — cardRef used for native non-passive touchmove */}
       <div
+        ref={cardRef}
         onTouchStart={e => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-        onTouchMove={e => handleMove(e.touches[0].clientX, e.touches[0].clientY)}
         onTouchEnd={handleEnd}
         onMouseDown={e => handleStart(e.clientX, e.clientY)}
         onMouseMove={e => swiping && handleMove(e.clientX, e.clientY)}
@@ -477,11 +511,14 @@ export function TaskListItem({
         style={{
           transform: `translateX(${swipeX}px)`,
           transition: getTransitionString(),
-          touchAction: "pan-y",
+          // During active swipe: none (prevents scroll fighting); at rest: pan-y allows vertical scroll
+          touchAction: swiping ? "none" : "pan-y",
           willChange: "transform",
         }}
         className={cn(
           "group relative rounded-xl border border-border border-l-2 bg-card z-20",
+          // Long-press ring animation — pure visual, cleared on swipe initiation
+          isPressing && "animate-long-press-ring",
           selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20" : "",
           !selected && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
           (menuOpen || statusOpen) ? "z-30 shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
