@@ -2,22 +2,9 @@
 
 import * as React from "react"
 import { createPortal } from "react-dom"
-import {
-  CalendarDays,
-  ChevronDown,
-  Pencil,
-  Trash2,
-  Play,
-  Check,
-} from "lucide-react"
+import { CalendarDays, ChevronDown, Pencil, Trash2, Play, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
-import {
-  formatDueDate,
-  STATUS_OPTIONS,
-  type Task,
-  type TaskPriority,
-  type TaskStatus,
-} from "@/lib/tasks"
+import { formatDueDate, STATUS_OPTIONS, type Task, type TaskPriority, type TaskStatus } from "@/lib/tasks"
 
 interface TaskListItemProps {
   task: Task
@@ -31,20 +18,28 @@ interface TaskListItemProps {
   onStartSelection?: (task: Task) => void
 }
 
-const PRIORITY_CONFIG: Record<
-  Exclude<TaskPriority, null>,
-  { dot: string; badge: string; label: string }
-> = {
-  URGENT: { dot: "bg-rose-500",   badge: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",     label: "Urgent" },
+const PRIORITY_CONFIG: Record<Exclude<TaskPriority, null>, { dot: string; badge: string; label: string }> = {
+  URGENT: { dot: "bg-rose-500",   badge: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",       label: "Urgent" },
   HIGH:   { dot: "bg-orange-400", badge: "bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300", label: "High" },
-  MEDIUM: { dot: "bg-amber-400",  badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",  label: "Medium" },
-  LOW:    { dot: "bg-sky-400",    badge: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",          label: "Low" },
+  MEDIUM: { dot: "bg-amber-400",  badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",   label: "Medium" },
+  LOW:    { dot: "bg-sky-400",    badge: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",           label: "Low" },
 }
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; badge: string; dot: string; border: string }> = {
-  IN_PROGRESS: { label: "In Progress", badge: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",       dot: "bg-blue-500",    border: "border-l-blue-400 dark:border-l-blue-500" },
-  PENDING:     { label: "Pending",     badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",   dot: "bg-amber-400",   border: "border-l-amber-400 dark:border-l-amber-500" },
+  IN_PROGRESS: { label: "In Progress", badge: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",         dot: "bg-blue-500",    border: "border-l-blue-400 dark:border-l-blue-500" },
+  PENDING:     { label: "Pending",     badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",     dot: "bg-amber-400",   border: "border-l-amber-400 dark:border-l-amber-500" },
   COMPLETED:   { label: "Completed",   badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", dot: "bg-emerald-400", border: "border-l-transparent" },
+}
+
+// Spring math — pure, no closures
+function applySpring(dx: number): number {
+  const abs  = Math.abs(dx), sign = Math.sign(dx)
+  let tx: number
+  if      (abs <= 60)  tx = dx * 0.85
+  else if (abs <= 120) tx = sign * 51 + (dx - sign * 60) * 0.45
+  else                 tx = sign * 78 + (dx - sign * 120) * 0.15
+  const max = typeof window !== "undefined" ? window.innerWidth * 0.45 : 200
+  return Math.abs(tx) > max ? Math.sign(tx) * max : tx
 }
 
 export function TaskListItem({
@@ -54,102 +49,150 @@ export function TaskListItem({
   const [expanded,       setExpanded]       = React.useState(false)
   const [menuOpen,       setMenuOpen]       = React.useState(false)
   const [statusOpen,     setStatusOpen]     = React.useState(false)
-  const [swipeX,         setSwipeX]         = React.useState(0)
-  const [swiping,        setSwiping]        = React.useState(false)
   const [isPressing,     setIsPressing]     = React.useState(false)
-  const [slideOut,       setSlideOut]       = React.useState<"left" | null>(null)
   const [isCollapsing,   setIsCollapsing]   = React.useState(false)
   const [collapseHeight, setCollapseHeight] = React.useState<number | undefined>(undefined)
+  const [slideOut,       setSlideOut]       = React.useState<"left" | null>(null)
+  // swipeX is ONLY used for the settled/transition state (not during live drag)
+  const [swipeX,         setSwipeX]         = React.useState(0)
   const [dropdownCoords, setDropdownCoords] = React.useState<{
-    top: number; left: number; width: number; type: "status" | "menu" | null
-  }>({ top: 0, left: 0, width: 0, type: null })
+    top: number; left: number; type: "status" | "menu" | null
+  }>({ top: 0, left: 0, type: null })
 
-  const elementRef   = React.useRef<HTMLDivElement>(null)
-  const cardRef      = React.useRef<HTMLDivElement>(null)
-  const menuRef      = React.useRef<HTMLDivElement>(null)
-  const moreBtnRef   = React.useRef<HTMLButtonElement>(null)
-  const statusRef    = React.useRef<HTMLDivElement>(null)
-  const statusBtnRef = React.useRef<HTMLButtonElement>(null)
+  // DOM refs for direct style mutation during drag (bypasses React render cycle)
+  const elementRef    = React.useRef<HTMLDivElement>(null)
+  const cardRef       = React.useRef<HTMLDivElement>(null)
+  const bgRightRef    = React.useRef<HTMLDivElement>(null)
+  const bgLeftRef     = React.useRef<HTMLDivElement>(null)
+  const iconRightRef  = React.useRef<HTMLDivElement>(null)
+  const iconLeftRef   = React.useRef<HTMLDivElement>(null)
+  const menuRef       = React.useRef<HTMLDivElement>(null)
+  const moreBtnRef    = React.useRef<HTMLButtonElement>(null)
+  const statusRef     = React.useRef<HTMLDivElement>(null)
+  const statusBtnRef  = React.useRef<HTMLButtonElement>(null)
 
-  // All gesture tracking in refs so native listener never has stale values
-  const startX         = React.useRef(0)
-  const startY         = React.useRef(0)
-  const liveSwipeX     = React.useRef(0)   // mirrors swipeX for use inside native handler
-  const isHoriz        = React.useRef(false)
-  const isScroll       = React.useRef(false)
-  const axisDecided    = React.useRef(false)
-  const activeSwiping  = React.useRef(false)
-  const longTimer      = React.useRef<NodeJS.Timeout | null>(null)
-  const longFired      = React.useRef(false)
-  const menuOpenRef    = React.useRef(menuOpen)
-  const statusOpenRef  = React.useRef(statusOpen)
+  // Gesture state — all in refs, never in React state during drag
+  const startX       = React.useRef(0)
+  const startY       = React.useRef(0)
+  const liveTx       = React.useRef(0)       // current translated X during drag
+  const isHoriz      = React.useRef(false)   // confirmed horizontal swipe
+  const isScroll     = React.useRef(false)   // confirmed vertical scroll
+  const axisChecked  = React.useRef(false)   // axis decision made
+  const dragging     = React.useRef(false)   // currently dragging
+  const longTimer    = React.useRef<NodeJS.Timeout | null>(null)
+  const longFired    = React.useRef(false)
+  const menuOpenRef  = React.useRef(false)
+  const statusOpenRef = React.useRef(false)
 
-  React.useEffect(() => { menuOpenRef.current = menuOpen },   [menuOpen])
+  React.useEffect(() => { menuOpenRef.current = menuOpen },    [menuOpen])
   React.useEffect(() => { statusOpenRef.current = statusOpen }, [statusOpen])
 
-  // ── Spring math ──────────────────────────────────────────────────────
-  const computeSpring = (dx: number): number => {
-    const abs  = Math.abs(dx)
-    const sign = Math.sign(dx)
-    let tx: number
-    if      (abs <= 60)  tx = dx * 0.85
-    else if (abs <= 120) tx = sign * 51 + (dx - sign * 60) * 0.45
-    else                 tx = sign * 78 + (dx - sign * 120) * 0.15
-    const max = window.innerWidth * 0.45
-    return Math.abs(tx) > max ? Math.sign(tx) * max : tx
+  // ── Direct DOM update during drag (no React state, no re-render) ─────
+  const applyDragFrame = (tx: number) => {
+    liveTx.current = tx
+    const P = Math.min(1, Math.abs(tx) / 120)
+
+    if (cardRef.current) {
+      cardRef.current.style.transform  = `translateX(${tx}px)`
+      cardRef.current.style.transition = "none"
+    }
+
+    // Show/hide background panels and update opacity
+    const goingRight = tx > 0
+    const goingLeft  = tx < 0
+
+    if (bgRightRef.current) {
+      bgRightRef.current.style.opacity = goingRight ? String(P * 0.95) : "0"
+    }
+    if (bgLeftRef.current) {
+      bgLeftRef.current.style.opacity = goingLeft ? String(P * 0.95) : "0"
+    }
+
+    const scale  = 0.65 + P * 0.35
+    const iconTx = tx * 0.22
+
+    if (iconRightRef.current) {
+      iconRightRef.current.style.opacity   = goingRight ? String(P) : "0"
+      iconRightRef.current.style.transform = `scale(${scale}) translateX(${iconTx}px)`
+    }
+    if (iconLeftRef.current) {
+      iconLeftRef.current.style.opacity   = goingLeft ? String(P) : "0"
+      iconLeftRef.current.style.transform = `scale(${scale}) translateX(${iconTx}px)`
+    }
   }
 
-  // ── Completed collapse ───────────────────────────────────────────────
+  // ── Reset visuals to resting state ───────────────────────────────────
+  const resetDragVisuals = (animated = true) => {
+    if (cardRef.current) {
+      cardRef.current.style.transition = animated
+        ? "transform 400ms cubic-bezier(0.175, 0.885, 0.32, 1.15)"
+        : "none"
+      cardRef.current.style.transform = "translateX(0)"
+    }
+    if (bgRightRef.current)   { bgRightRef.current.style.opacity = "0" }
+    if (bgLeftRef.current)    { bgLeftRef.current.style.opacity  = "0" }
+    if (iconRightRef.current) { iconRightRef.current.style.opacity = "0" }
+    if (iconLeftRef.current)  { iconLeftRef.current.style.opacity  = "0" }
+    liveTx.current = 0
+    setSwipeX(0)
+  }
+
+  // ── Completed collapse sequence ───────────────────────────────────────
   const triggerCollapse = React.useCallback(() => {
-    setSlideOut("left")
+    // Slide card fully off screen left
+    if (cardRef.current) {
+      cardRef.current.style.transition = "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
+      cardRef.current.style.transform  = "translateX(-110%)"
+    }
     if (elementRef.current) setCollapseHeight(elementRef.current.offsetHeight)
+    setSlideOut("left")
+
     setTimeout(() => setIsCollapsing(true), 16)
     setTimeout(() => {
       onStatusChange(task, "COMPLETED")
-      setSwipeX(0); liveSwipeX.current = 0
       setSlideOut(null); setIsCollapsing(false); setCollapseHeight(undefined)
+      liveTx.current = 0; setSwipeX(0)
+      if (cardRef.current) { cardRef.current.style.transform = ""; cardRef.current.style.transition = "" }
     }, 380)
   }, [task, onStatusChange])
 
-  // ── Native non-passive touchmove — attached once, no stale closure ──
+  // ── Native touchmove listener — attached once, reads refs only ────────
   React.useEffect(() => {
     const el = cardRef.current
     if (!el) return
 
     const onMove = (e: TouchEvent) => {
       if (menuOpenRef.current || statusOpenRef.current) return
-      if (e.touches.length !== 1) return
       if (isScroll.current) return
+      if (e.touches.length !== 1) return
 
       const touch = e.touches[0]
       const dx = touch.clientX - startX.current
       const dy = touch.clientY - startY.current
 
-      // Axis decision in first 6px of movement
-      if (!axisDecided.current) {
-        if (Math.hypot(dx, dy) < 6) return
-        axisDecided.current = true
+      if (!axisChecked.current) {
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 6) return        // still within dead-zone, wait
+        axisChecked.current = true
+
         if (Math.abs(dy) > Math.abs(dx)) {
-          // Vertical → native scroll
+          // Vertical: let browser scroll, abort swipe
           isScroll.current = true
           setIsPressing(false)
           if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
           return
         } else {
-          // Horizontal → lock swipe
-          isHoriz.current    = true
-          activeSwiping.current = true
-          setSwiping(true)
+          // Horizontal: take control
+          isHoriz.current  = true
+          dragging.current = true
           setIsPressing(false)
           if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
         }
       }
 
       if (isHoriz.current) {
-        e.preventDefault() // block scroll now that we are in a horizontal swipe
-        const tx = computeSpring(dx)
-        liveSwipeX.current = tx
-        setSwipeX(tx)
+        e.preventDefault()              // block browser scroll on horizontal drag
+        applyDragFrame(applySpring(dx)) // direct DOM update — zero React overhead
       }
     }
 
@@ -158,20 +201,18 @@ export function TaskListItem({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Touch start ──────────────────────────────────────────────────────
+  // ── Touch start ───────────────────────────────────────────────────────
   const onTouchStart = (e: React.TouchEvent) => {
     if (menuOpenRef.current || statusOpenRef.current) return
     const t = e.touches[0]
-    startX.current        = t.clientX
-    startY.current        = t.clientY
-    liveSwipeX.current    = 0
-    isHoriz.current       = false
-    isScroll.current      = false
-    axisDecided.current   = false
-    activeSwiping.current = false
-    longFired.current     = false
-    setSwiping(false)
-    setSlideOut(null)
+    startX.current     = t.clientX
+    startY.current     = t.clientY
+    liveTx.current     = 0
+    isHoriz.current    = false
+    isScroll.current   = false
+    axisChecked.current = false
+    dragging.current   = false
+    longFired.current  = false
 
     if (onStartSelection && !selectionMode) {
       setIsPressing(true)
@@ -185,20 +226,25 @@ export function TaskListItem({
     }
   }
 
-  // ── Touch end ────────────────────────────────────────────────────────
+  // ── Touch end ─────────────────────────────────────────────────────────
   const onTouchEnd = () => {
     if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null }
     setIsPressing(false)
 
-    if (activeSwiping.current) {
-      activeSwiping.current = false
-      setSwiping(false)
-      const tx = liveSwipeX.current
-      if      (tx >=  72) { setSwipeX(0); liveSwipeX.current = 0; onStatusChange(task, "IN_PROGRESS") }
-      else if (tx <= -72) { triggerCollapse() }
-      else                { setSwipeX(0); liveSwipeX.current = 0 }
+    if (!dragging.current) { resetDragVisuals(false); return }
+    dragging.current = false
+
+    const tx = liveTx.current
+    if (tx >= 72) {
+      // Right swipe committed → snap back, mark IN_PROGRESS
+      resetDragVisuals(true)
+      onStatusChange(task, "IN_PROGRESS")
+    } else if (tx <= -72) {
+      // Left swipe committed → slide off + collapse
+      triggerCollapse()
     } else {
-      setSwipeX(0); liveSwipeX.current = 0
+      // Sub-threshold → elastic recoil to origin
+      resetDragVisuals(true)
     }
   }
 
@@ -210,13 +256,13 @@ export function TaskListItem({
     if (selectionMode && onToggleSelect) onToggleSelect(task)
   }
 
-  // ── Portal dropdown helpers ──────────────────────────────────────────
+  // ── Portalized dropdown helpers ───────────────────────────────────────
   const openStatusDropdown = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (statusOpen) { setStatusOpen(false); return }
     const rect = statusBtnRef.current?.getBoundingClientRect()
     if (rect) {
-      setDropdownCoords({ top: rect.bottom, left: rect.left, width: rect.width, type: "status" })
+      setDropdownCoords({ top: rect.bottom + 4, left: rect.left, type: "status" })
       setStatusOpen(true); setMenuOpen(false)
     }
   }
@@ -225,12 +271,11 @@ export function TaskListItem({
     if (menuOpen) { setMenuOpen(false); return }
     const rect = moreBtnRef.current?.getBoundingClientRect()
     if (rect) {
-      setDropdownCoords({ top: rect.bottom, left: rect.left - 110, width: rect.width, type: "menu" })
+      setDropdownCoords({ top: rect.bottom + 4, left: rect.left - 110, type: "menu" })
       setMenuOpen(true); setStatusOpen(false)
     }
   }
 
-  // Portal dismiss listeners
   React.useEffect(() => {
     if (!menuOpen) return
     const h = (e: MouseEvent) => {
@@ -261,21 +306,11 @@ export function TaskListItem({
     return () => { window.removeEventListener("scroll", close); window.removeEventListener("resize", close) }
   }, [statusOpen, menuOpen])
 
-  // ── Derived display values ───────────────────────────────────────────
+  // ── Derived values ────────────────────────────────────────────────────
   const isCompleted = task.status === "COMPLETED"
   const priorityCfg = task.priority ? PRIORITY_CONFIG[task.priority] : null
   const statusCfg   = STATUS_CONFIG[task.status]
   const isOverdue   = !isCompleted && task.due_date ? new Date(task.due_date) < new Date() : false
-
-  const transition = swiping
-    ? "none"
-    : slideOut
-    ? "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
-    : "transform 400ms cubic-bezier(0.175, 0.885, 0.32, 1.15)"
-
-  const P          = Math.min(1, Math.abs(swipeX) / 120)
-  const iconScale  = 0.65 + P * 0.35
-  const iconTx     = swipeX * 0.22
 
   const wrapperStyle: React.CSSProperties = isCollapsing
     ? { height: 0, opacity: 0, marginTop: 0, marginBottom: 0, overflow: "hidden",
@@ -290,57 +325,53 @@ export function TaskListItem({
       style={wrapperStyle}
       className={cn("relative select-none", isCompleted && "animate-completed-slide-down")}
     >
-      {/* BACKGROUND REVEAL — sits beneath moving card, clipped to card shape */}
+      {/* BACKGROUND REVEAL — fixed beneath card, clips to card shape */}
       <div
         className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none"
         style={{ zIndex: 10 }}
         aria-hidden
       >
-        {/* Right swipe: blue IN_PROGRESS */}
+        {/* Right swipe blue panel */}
+        <div ref={bgRightRef} className="absolute inset-0 bg-blue-500" style={{ opacity: 0 }} />
+        {/* Left swipe green panel */}
+        <div ref={bgLeftRef}  className="absolute inset-0 bg-emerald-500" style={{ opacity: 0 }} />
+
+        {/* Right action icon (Start) */}
         <div
-          className="absolute inset-0 bg-blue-500"
-          style={{ opacity: swipeX > 0 ? P * 0.95 : 0 }}
-        />
-        {/* Left swipe: emerald COMPLETE */}
+          ref={iconRightRef}
+          className="absolute inset-y-0 left-0 flex items-center pl-5 text-white gap-1.5"
+          style={{ opacity: 0, transform: "scale(0.65) translateX(0px)" }}
+        >
+          <Play className="size-5 shrink-0" />
+          <span className="text-sm font-bold">Start</span>
+        </div>
+
+        {/* Left action icon (Done) */}
         <div
-          className="absolute inset-0 bg-emerald-500"
-          style={{ opacity: swipeX < 0 ? P * 0.95 : 0 }}
-        />
-        {/* Right icon */}
-        {swipeX > 0 && (
-          <div
-            className="absolute inset-y-0 left-0 flex items-center pl-5 text-white gap-1.5"
-            style={{ opacity: P, transform: `scale(${iconScale}) translateX(${iconTx}px)` }}
-          >
-            <Play className="size-5 shrink-0" />
-            <span className="text-sm font-bold">Start</span>
-          </div>
-        )}
-        {/* Left icon */}
-        {swipeX < 0 && (
-          <div
-            className="absolute inset-y-0 right-0 flex items-center pr-5 text-white gap-1.5"
-            style={{ opacity: P, transform: `scale(${iconScale}) translateX(${iconTx}px)` }}
-          >
-            <span className="text-sm font-bold">Done</span>
-            <Check className="size-5 shrink-0" />
-          </div>
-        )}
+          ref={iconLeftRef}
+          className="absolute inset-y-0 right-0 flex items-center pr-5 text-white gap-1.5"
+          style={{ opacity: 0, transform: "scale(0.65) translateX(0px)" }}
+        >
+          <span className="text-sm font-bold">Done</span>
+          <Check className="size-5 shrink-0" />
+        </div>
       </div>
 
-      {/* FOREGROUND CARD — moves with swipe, sits above background */}
+      {/* FOREGROUND CARD — moves with swipe */}
       <div
         ref={cardRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
         onClick={handleClick}
         style={{
-          transform: `translateX(${swipeX}px)`,
-          transition,
-          touchAction: "pan-y",
-          willChange: "transform",
           position: "relative",
           zIndex: 20,
+          // touchAction pan-y: browser handles vertical scroll, JS gets horizontal
+          touchAction: "pan-y",
+          willChange: "transform",
+          // Initial transform — will be overridden by direct DOM writes during drag
+          transform: `translateX(${swipeX}px)`,
         }}
         className={cn(
           "group rounded-xl border border-border border-l-2 bg-card",
@@ -363,7 +394,7 @@ export function TaskListItem({
         )}
 
         <div className="flex items-center gap-3 px-4 py-3">
-          {/* Col 1: checkbox */}
+          {/* Checkbox / selection */}
           <div className="flex items-center justify-center shrink-0">
             {selectionMode ? (
               <div className={cn(
@@ -397,7 +428,7 @@ export function TaskListItem({
             )}
           </div>
 
-          {/* Col 2: content */}
+          {/* Title + status + due date */}
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-2">
               <span className={cn(
@@ -445,7 +476,7 @@ export function TaskListItem({
             </div>
           </div>
 
-          {/* Col 3: actions */}
+          {/* Expand + more actions */}
           <div className="flex shrink-0 items-center gap-1">
             {task.description && (
               <button
@@ -481,7 +512,7 @@ export function TaskListItem({
         </div>
       </div>
 
-      {/* Expandable notes */}
+      {/* Expandable description */}
       {expanded && task.description && (
         <div className="px-12 pb-3.5 animate-fade-up">
           <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground leading-relaxed">
@@ -499,20 +530,12 @@ export function TaskListItem({
         >
           <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Set status</p>
           {STATUS_OPTIONS.map(opt => {
-            const oCfg = STATUS_CONFIG[opt.value]
-            const isActive = task.status === opt.value
+            const oCfg = STATUS_CONFIG[opt.value]; const isActive = task.status === opt.value
             return (
               <button
                 key={opt.value}
-                onClick={() => {
-                  setStatusOpen(false)
-                  if (opt.value === "COMPLETED") triggerCollapse()
-                  else onStatusChange(task, opt.value)
-                }}
-                className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors text-left",
-                  isActive ? "bg-accent text-foreground" : "text-foreground/80 hover:bg-muted"
-                )}
+                onClick={() => { setStatusOpen(false); if (opt.value === "COMPLETED") triggerCollapse(); else onStatusChange(task, opt.value) }}
+                className={cn("flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors text-left", isActive ? "bg-accent text-foreground" : "text-foreground/80 hover:bg-muted")}
               >
                 <span className="relative flex size-2 shrink-0">
                   {opt.value === "IN_PROGRESS" && <span className={cn("animate-ping absolute inset-0 rounded-full opacity-60", oCfg.dot)} />}
@@ -538,20 +561,14 @@ export function TaskListItem({
           style={{ position: "fixed", top: dropdownCoords.top, left: dropdownCoords.left, width: "148px", zIndex: 99999 }}
           className="rounded-xl border border-border bg-popover py-1 shadow-xl animate-scale-in"
         >
-          <button
-            onClick={() => { onEdit(task); setMenuOpen(false) }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground/80 hover:bg-muted hover:text-foreground transition-colors text-left"
-          >
-            <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
-            Edit task
+          <button onClick={() => { onEdit(task); setMenuOpen(false) }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground/80 hover:bg-muted hover:text-foreground transition-colors text-left">
+            <Pencil className="size-3.5 shrink-0 text-muted-foreground" /> Edit task
           </button>
           <div className="mx-3 my-1 h-px bg-border" />
-          <button
-            onClick={() => { onDelete(task); setMenuOpen(false) }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors text-left"
-          >
-            <Trash2 className="size-3.5 shrink-0" />
-            Delete
+          <button onClick={() => { onDelete(task); setMenuOpen(false) }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors text-left">
+            <Trash2 className="size-3.5 shrink-0" /> Delete
           </button>
         </div>,
         document.body
