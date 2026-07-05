@@ -107,6 +107,9 @@ export function TaskListItem({
   const touchStartY = React.useRef(0)
   const [swipeX, setSwipeX] = React.useState(0)
   const [swiping, setSwiping] = React.useState(false)
+  const [isPressing, setIsPressing] = React.useState(false)
+  const [slideOut, setSlideOut] = React.useState<"left" | "right" | null>(null)
+
   const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
   const isSwipeActive = React.useRef(false)
 
@@ -116,12 +119,15 @@ export function TaskListItem({
     touchStartY.current = clientY
     isSwipeActive.current = false
     setSwipeX(0)
+    setSlideOut(null)
 
     if (onStartSelection && !selectionMode) {
+      setIsPressing(true)
       longHoldTimer.current = setTimeout(() => {
         if (typeof navigator !== "undefined" && navigator.vibrate) {
           navigator.vibrate(40)
         }
+        setIsPressing(false)
         onStartSelection(task)
       }, 550)
     }
@@ -136,17 +142,20 @@ export function TaskListItem({
         clearTimeout(longHoldTimer.current)
         longHoldTimer.current = null
       }
+      setIsPressing(false)
     }
 
     if (!isSwipeActive.current && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       isSwipeActive.current = true
       setSwiping(true)
+      setIsPressing(false)
     }
 
     if (isSwipeActive.current) {
+      // Magnetic resistance: stiffer past 100px
       let targetX = dx
-      if (dx > 160) targetX = 160 + (dx - 160) * 0.3
-      if (dx < -160) targetX = -160 + (dx + 160) * 0.3
+      if (dx > 100) targetX = 100 + (dx - 100) * 0.15
+      else if (dx < -100) targetX = -100 + (dx + 100) * 0.15
       setSwipeX(targetX)
     }
   }
@@ -156,18 +165,34 @@ export function TaskListItem({
       clearTimeout(longHoldTimer.current)
       longHoldTimer.current = null
     }
+    setIsPressing(false)
 
     if (swiping) {
       setSwiping(false)
       isSwipeActive.current = false
 
-      if (swipeX > 100) {
-        onStatusChange(task, "IN_PROGRESS")
-      } else if (swipeX < -100) {
-        onStatusChange(task, "COMPLETED")
+      if (swipeX > 90) {
+        setSlideOut("right")
+        setSwipeX(window.innerWidth)
+        setTimeout(() => {
+          onStatusChange(task, "IN_PROGRESS")
+          setSwipeX(0)
+          setSlideOut(null)
+        }, 220)
+      } else if (swipeX < -90) {
+        setSlideOut("left")
+        setSwipeX(-window.innerWidth)
+        setTimeout(() => {
+          onStatusChange(task, "COMPLETED")
+          setSwipeX(0)
+          setSlideOut(null)
+        }, 220)
+      } else {
+        setSwipeX(0)
       }
+    } else {
+      setSwipeX(0)
     }
-    setSwipeX(0)
   }
 
   const handleClick = (e: React.MouseEvent) => {
@@ -222,30 +247,49 @@ export function TaskListItem({
   }, [statusOpen])
 
   return (
-    <div className="relative overflow-hidden rounded-xl select-none">
-      {/* Slide panels (behind card) */}
-      {swipeX > 0 && (
+    <div className="relative select-none z-10">
+      {/* Fixed Swipe Backgrounds Wrapper (clips backgrounds inside card boundaries, but lets dropdowns overflow card) */}
+      <div className="absolute inset-0 z-0 overflow-hidden rounded-xl pointer-events-none">
+        {/* Play (Start) background panel (Swipe Right) */}
         <div
-          className="absolute inset-y-0 left-0 z-0 flex items-center bg-blue-500 text-white rounded-xl pl-5 transition-opacity"
-          style={{ width: `${Math.max(0, swipeX)}px`, opacity: swipeX > 15 ? 1 : 0 }}
+          className={cn(
+            "absolute inset-y-0 left-0 w-full flex items-center bg-blue-500 text-white pl-5 transition-opacity duration-200",
+            swipeX > 0 ? "opacity-100" : "opacity-0"
+          )}
         >
-          <div className="flex items-center gap-2 select-none font-semibold text-xs whitespace-nowrap">
-            <Play className="size-4 animate-pulse shrink-0" />
-            <span>Start</span>
+          <div className="flex items-center gap-2 font-semibold text-xs select-none">
+            <Play
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-200",
+                (swipeX > 90 || slideOut === "right") && "scale-125 animate-pulse"
+              )}
+            />
+            <span className={cn("transition-transform duration-200", (swipeX > 90 || slideOut === "right") && "scale-105 font-bold")}>
+              {swipeX > 90 ? "Release to Start" : "Start"}
+            </span>
           </div>
         </div>
-      )}
-      {swipeX < 0 && (
+
+        {/* Check (Complete) background panel (Swipe Left) */}
         <div
-          className="absolute inset-y-0 right-0 z-0 flex items-center justify-end bg-emerald-500 text-white rounded-xl pr-5 transition-opacity"
-          style={{ width: `${Math.max(0, -swipeX)}px`, opacity: swipeX < -15 ? 1 : 0 }}
+          className={cn(
+            "absolute inset-y-0 right-0 w-full flex items-center justify-end bg-emerald-500 text-white pr-5 transition-opacity duration-200",
+            swipeX < 0 ? "opacity-100" : "opacity-0"
+          )}
         >
-          <div className="flex items-center gap-2 select-none font-semibold text-xs whitespace-nowrap">
-            <span>Complete</span>
-            <Check className="size-4 shrink-0" />
+          <div className="flex items-center gap-2 font-semibold text-xs select-none">
+            <span className={cn("transition-transform duration-200", (swipeX < -90 || slideOut === "left") && "scale-105 font-bold")}>
+              {swipeX < -90 ? "Release to Complete" : "Complete"}
+            </span>
+            <Check
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-200",
+                (swipeX < -90 || slideOut === "left") && "scale-125"
+              )}
+            />
           </div>
         </div>
-      )}
+      </div>
 
       {/* Main card content container */}
       <div
@@ -263,8 +307,9 @@ export function TaskListItem({
         }}
         className={cn(
           "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-10",
+          isPressing ? "scale-[0.97] opacity-90 shadow-inner bg-muted/40" : "scale-100",
           selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20" : "",
-          !selected && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
+          !selected && !isPressing && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
           (menuOpen || statusOpen) ? "z-30 shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
           selectionMode && "cursor-pointer select-none",
           "animate-fade-up"
