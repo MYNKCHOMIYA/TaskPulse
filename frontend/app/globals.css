@@ -249,16 +249,24 @@
 }
 
 /* ── VIEW TRANSITIONS FOR CIRCULAR THEME REVEAL ── */
-::view-transition-old(root),
-::view-transition-new(root) {
+::view-transition-old(root) {
   animation: none;
   mix-blend-mode: normal;
-}
-::view-transition-old(root) {
   z-index: 1;
 }
 ::view-transition-new(root) {
+  animation: circular-reveal 650ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  mix-blend-mode: normal;
   z-index: 9999;
+}
+
+@keyframes circular-reveal {
+  from {
+    clip-path: circle(0px at var(--click-x, 50%) var(--click-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--end-radius, 100%) at var(--click-x, 50%) var(--click-y, 50%));
+  }
 }
 
 /* Disable standard transitions during active view transition so they don't lag or conflict */

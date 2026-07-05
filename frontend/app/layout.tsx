@@ -42,8 +42,10 @@ export default function RootLayout({
       <head>
         {/* PWA & iOS standalone app capability meta tags */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="TaskPulse" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 
         {/* Inline script to apply theme before first paint — prevents flash */}
         <script

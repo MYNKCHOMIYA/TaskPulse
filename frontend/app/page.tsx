@@ -64,26 +64,16 @@ export default function Page() {
       const x = window.innerWidth / 2
       const y = window.innerHeight / 2
       const endRadius = Math.hypot(x, y)
+
+      document.documentElement.style.setProperty('--click-x', `${x}px`)
+      document.documentElement.style.setProperty('--click-y', `${y}px`)
+      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+
       const transition = (document as any).startViewTransition(() => {
         flushSync(() => {
           setIsAuthenticated(false)
           setUser(null)
         })
-      })
-      transition.ready.then(() => {
-        document.documentElement.animate(
-          {
-            clipPath: [
-              `circle(0px at ${x}px ${y}px)`,
-              `circle(${endRadius}px at ${x}px ${y}px)`,
-            ],
-          },
-          {
-            duration: 750,
-            easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-            pseudoElement: "::view-transition-new(root)",
-          }
-        )
       })
     } else {
       setIsAuthenticated(false)
@@ -100,26 +90,16 @@ export default function Page() {
       const x = window.innerWidth / 2
       const y = window.innerHeight / 2
       const endRadius = Math.hypot(x, y)
+
+      document.documentElement.style.setProperty('--click-x', `${x}px`)
+      document.documentElement.style.setProperty('--click-y', `${y}px`)
+      document.documentElement.style.setProperty('--end-radius', `${endRadius}px`)
+
       const transition = (document as any).startViewTransition(() => {
         flushSync(() => {
           setIsAuthenticated(false)
           setUser(null)
         })
-      })
-      transition.ready.then(() => {
-        document.documentElement.animate(
-          {
-            clipPath: [
-              `circle(0px at ${x}px ${y}px)`,
-              `circle(${endRadius}px at ${x}px ${y}px)`,
-            ],
-          },
-          {
-            duration: 750,
-            easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-            pseudoElement: "::view-transition-new(root)",
-          }
-        )
       })
     } else {
       setIsAuthenticated(false)
