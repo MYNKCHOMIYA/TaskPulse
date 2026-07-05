@@ -104,22 +104,24 @@ export function TaskListItem({
   const statusBtnRef = React.useRef<HTMLButtonElement>(null)
   const elementRef = React.useRef<HTMLDivElement>(null)
 
-  // ── Swipe Gestures & Long Hold States ─────────────────────
+  // ── Swipe Gesture States ─────────────────────────────────
   const touchStartX = React.useRef(0)
   const touchStartY = React.useRef(0)
   const [swipeX, setSwipeX] = React.useState(0)
   const [swiping, setSwiping] = React.useState(false)
-  const [isPressing, setIsPressing] = React.useState(false)
   const [slideOut, setSlideOut] = React.useState<"left" | "right" | null>(null)
   const [isCollapsing, setIsCollapsing] = React.useState(false)
   const [collapseHeight, setCollapseHeight] = React.useState<number | undefined>(undefined)
 
-  const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
   const isSwipeActive = React.useRef(false)
 
   // ── Scroll axis interception refs ──
   const isScrollGesture = React.useRef(false)
   const isGestureEvaluated = React.useRef(false)
+
+  // ── Long-press: fully decoupled from pointer gesture pipeline ──
+  const longHoldTimer = React.useRef<NodeJS.Timeout | null>(null)
+  const longPressDidFire = React.useRef(false)
 
   // Coords for portalized dropdown menus
   const [dropdownCoords, setDropdownCoords] = React.useState<{
@@ -202,14 +204,16 @@ export function TaskListItem({
     setSlideOut(null)
     isScrollGesture.current = false
     isGestureEvaluated.current = false
+    longPressDidFire.current = false
 
+    // Long-press is entirely decoupled: it does NOT block or delay swipe tracking
     if (onStartSelection && !selectionMode) {
-      setIsPressing(true)
       longHoldTimer.current = setTimeout(() => {
+        if (longPressDidFire.current) return
+        longPressDidFire.current = true
         if (typeof navigator !== "undefined" && navigator.vibrate) {
           navigator.vibrate(40)
         }
-        setIsPressing(false)
         onStartSelection(task)
       }, 550)
     }
@@ -219,37 +223,39 @@ export function TaskListItem({
     const dx = clientX - touchStartX.current
     const dy = clientY - touchStartY.current
 
+    // If already determined this is a scroll gesture, bail instantly
     if (isScrollGesture.current) return
 
-    // Scroll axis interception: evaluate motion vector inside the first 6px
+    // Scroll axis interception: evaluate motion vector inside the first 6px of travel
     if (!isGestureEvaluated.current) {
       const distance = Math.hypot(dx, dy)
       if (distance >= 6) {
         isGestureEvaluated.current = true
         if (Math.abs(dy) > Math.abs(dx)) {
+          // Vertical dominates — hand off to native scroll, cancel long-press
           isScrollGesture.current = true
-          setIsPressing(false)
           if (longHoldTimer.current) {
             clearTimeout(longHoldTimer.current)
             longHoldTimer.current = null
           }
           return
         } else {
+          // Horizontal dominates — lock onto swipe lane, cancel long-press
           isSwipeActive.current = true
           setSwiping(true)
-          setIsPressing(false)
           if (longHoldTimer.current) {
             clearTimeout(longHoldTimer.current)
             longHoldTimer.current = null
           }
         }
       } else {
+        // Still inside the interception buffer, wait for more data
         return
       }
     }
 
     if (isSwipeActive.current) {
-      // Tiered logarithmic tension spring engine
+      // Tiered logarithmic spring tension engine
       const absX = Math.abs(dx)
       const sign = Math.sign(dx)
       let tx = 0
@@ -262,7 +268,7 @@ export function TaskListItem({
         tx = sign * 78 + (dx - sign * 120) * 0.15
       }
 
-      // Hard clamp translation to 45% of viewport width
+      // Hard clamp: no more than 45% of the viewport width
       const maxLimit = window.innerWidth * 0.45
       if (Math.abs(tx) > maxLimit) {
         tx = Math.sign(tx) * maxLimit
@@ -273,26 +279,25 @@ export function TaskListItem({
   }
 
   const handleEnd = () => {
+    // Always cancel the long-press timer on finger-up
     if (longHoldTimer.current) {
       clearTimeout(longHoldTimer.current)
       longHoldTimer.current = null
     }
-    setIsPressing(false)
 
     if (swiping) {
       setSwiping(false)
       isSwipeActive.current = false
 
-      // Snap check (72px trigger)
       if (swipeX >= 72) {
-        // Swipe Right -> IN_PROGRESS
+        // Right swipe confirmed → snap back to 0 and mark IN_PROGRESS
         setSwipeX(0)
         onStatusChange(task, "IN_PROGRESS")
       } else if (swipeX <= -72) {
-        // Swipe Left -> COMPLETED
+        // Left swipe confirmed → slide off + height collapse
         triggerCompletedCollapseSequence()
       } else {
-        // Recoil back to 0px
+        // Under threshold — elastic recoil to origin
         setSwipeX(0)
       }
     } else {
@@ -368,17 +373,18 @@ export function TaskListItem({
     }
   }, [statusOpen, menuOpen])
 
-  // Get physics transition string
+  // Physics transition curve
   const getTransitionString = () => {
     if (swiping) return "none"
     if (slideOut) return "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
-    return "transform 400ms cubic-bezier(0.2, 0.85, 0.32, 1.2)"
+    // Elastic recoil matching spec: cubic-bezier(0.175, 0.885, 0.32, 1.15)
+    return "transform 400ms cubic-bezier(0.175, 0.885, 0.32, 1.15)"
   }
 
-  // Unravel calculations
+  // Reveal stack unravel calculations — spec: bgScale 0.65+P*0.35, parallax Tx*0.22
   const progressRatio = Math.min(1, Math.abs(swipeX) / 120)
-  const bgScale = 0.7 + progressRatio * 0.3
-  const parallaxX = swipeX * 0.18
+  const bgScale = 0.65 + progressRatio * 0.35
+  const parallaxX = swipeX * 0.22
 
   return (
     <div
@@ -409,7 +415,7 @@ export function TaskListItem({
             }
       }
       className={cn(
-        "relative select-none z-10",
+        "relative select-none",
         isCompleted && "animate-completed-slide-down"
       )}
     >
@@ -475,10 +481,9 @@ export function TaskListItem({
           willChange: "transform",
         }}
         className={cn(
-          "group relative rounded-xl border border-border border-l-2 bg-card transition-all duration-200 z-20",
-          isPressing ? "scale-[0.97] opacity-90 shadow-inner bg-muted/40" : "scale-100",
+          "group relative rounded-xl border border-border border-l-2 bg-card z-20",
           selected ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-2 ring-primary/20" : "",
-          !selected && !isPressing && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
+          !selected && (isCompleted ? "border-l-transparent opacity-55" : statusCfg.border),
           (menuOpen || statusOpen) ? "z-30 shadow-md border-border/80" : "hover:shadow-md hover:shadow-black/5 dark:hover:shadow-black/25",
           selectionMode && "cursor-pointer select-none",
           "animate-fade-up"

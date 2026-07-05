@@ -7,6 +7,23 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // A simple pass-through fetch listener satisfies PWA criteria
-  event.respondWith(fetch(event.request));
+  const url = event.request.url;
+
+  // Bypass service worker for Vercel SSO redirects, manifests, and api calls
+  if (
+    url.includes('vercel.com') ||
+    url.includes('manifest.webmanifest') ||
+    url.includes('/api/') ||
+    url.includes('/auth/')
+  ) {
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request).catch((err) => {
+      // Return a basic fallback response to prevent uncaught promise rejection crash loops
+      console.warn('Fetch failed inside service worker:', err);
+      return new Response('Network error occurred', { status: 480 });
+    })
+  );
 });
