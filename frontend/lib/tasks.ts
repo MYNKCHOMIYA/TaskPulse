@@ -2,7 +2,7 @@ export type TaskStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED"
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null
 
 export interface Task {
-  id: string
+  id: number
   title: string
   description: string
   status: TaskStatus
@@ -71,7 +71,7 @@ export const MOCK_USER: User = {
 
 export const INITIAL_TASKS: Task[] = [
   {
-    id: "t1",
+    id: 1,
     title: "Finalize Q3 product roadmap",
     description:
       "Consolidate feedback from stakeholders and lock the feature priorities for the next quarter.",
@@ -83,7 +83,7 @@ export const INITIAL_TASKS: Task[] = [
     started_at: daysFromNow(-1),
   },
   {
-    id: "t2",
+    id: 2,
     title: "Review design system tokens",
     description:
       "Audit color, spacing, and typography tokens for consistency across the marketing site and app.",
@@ -96,7 +96,7 @@ export const INITIAL_TASKS: Task[] = [
     completed_at: null,
   },
   {
-    id: "t3",
+    id: 3,
     title: "Ship onboarding email sequence",
     description:
       "Write and schedule the five-part welcome sequence for new sign-ups.",
@@ -109,7 +109,7 @@ export const INITIAL_TASKS: Task[] = [
     completed_at: daysFromNow(-1),
   },
   {
-    id: "t4",
+    id: 4,
     title: "Prepare investor update deck",
     description:
       "Summarize growth metrics, revenue, and product milestones for the monthly update.",
@@ -122,7 +122,7 @@ export const INITIAL_TASKS: Task[] = [
     completed_at: null,
   },
   {
-    id: "t5",
+    id: 5,
     title: "Clean up backlog tickets",
     description: "",
     status: "PENDING",

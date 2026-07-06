@@ -157,7 +157,7 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
   const [deleteLoading, setDeleteLoading] = React.useState(false)
 
   // ── Selection Mode States ──────────────────────────────────
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set())
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState(false)
 
   const selectionMode = selectedIds.size > 0
@@ -275,12 +275,17 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
   function openEdit(task: Task) { setEditingTask(task); setPanelOpen(true) }
 
   async function handleSave(values: TaskFormValues) {
-    if (editingTask) {
-      const updated = await api.tasks.updateTask(editingTask.id, values)
-      setTasks(prev => prev.map(t => t.id === editingTask.id ? updated : t))
-    } else {
-      const created = await api.tasks.createTask(values)
-      setTasks(prev => [created, ...prev])
+    try {
+      if (editingTask) {
+        const updated = await api.tasks.updateTask(editingTask.id, values)
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? updated : t))
+      } else {
+        const created = await api.tasks.createTask(values)
+        setTasks(prev => [created, ...prev])
+      }
+    } catch (err: any) {
+      alert(err.message || "An error occurred while saving the task.")
+      throw err // Rethrow to let the form panel know it failed
     }
   }
 
@@ -303,8 +308,6 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
       updates.completed_at = new Date().toISOString()
       // If it somehow bypassed IN_PROGRESS, give it a started_at of now
       if (!task.started_at) updates.started_at = updates.completed_at
-    } else if (newStatus === "IN_PROGRESS" && !task.started_at) {
-      updates.started_at = new Date().toISOString()
     }
     
     // Optimistic update

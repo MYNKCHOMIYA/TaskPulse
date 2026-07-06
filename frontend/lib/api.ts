@@ -175,7 +175,7 @@ export const api = {
       const data = await res.json()
       let tasksList: Task[] = data.tasks.map((t: any) => ({
         ...t,
-        id: String(t.id),
+        id: t.id,
       }))
 
       if (filters?.priority === "NONE") {
@@ -216,11 +216,11 @@ export const api = {
       const t = await res.json()
       return {
         ...t,
-        id: String(t.id),
+        id: t.id,
       }
     },
 
-    async updateTask(id: string, taskData: Partial<Omit<Task, "id" | "created_at" | "updated_at">>): Promise<Task> {
+    async updateTask(id: number, taskData: Partial<Omit<Task, "id" | "created_at" | "updated_at">>): Promise<Task> {
       const payload = {
         title: taskData.title,
         description: taskData.description,
@@ -242,11 +242,11 @@ export const api = {
       const t = await res.json()
       return {
         ...t,
-        id: String(t.id),
+        id: t.id,
       }
     },
 
-    async deleteTask(id: string): Promise<void> {
+    async deleteTask(id: number): Promise<void> {
       const res = await apiFetch(`/tasks/delete/${id}`, {
         method: "DELETE",
       })
