@@ -6,6 +6,14 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/backend/:path*',
+        destination: 'https://taskpulse-api-nbwx.onrender.com/:path*',
+      },
+    ]
+  },
 }
 
 export default nextConfig
