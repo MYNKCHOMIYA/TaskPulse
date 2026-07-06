@@ -149,13 +149,22 @@ def update_task(id:int,task : UpdateTask,db : Session = Depends(get_db),token_da
                 
                 # Check for completion to calc duration
                 if new_status == "COMPLETED" and db_task.started_at:
-                    completed_time = update_task_data.get('completed_at', datetime.now(timezone.utc).replace(tzinfo=None))
-                    duration_sec = (completed_time - db_task.started_at).total_seconds()
-                    if duration_sec > 0:
-                        m, s = divmod(int(duration_sec), 60)
-                        h, m = divmod(m, 60)
-                        dur_str = f"{h}h {m}m {s}s" if h > 0 else (f"{m}m {s}s" if m > 0 else f"{s}s")
-                        log.details = f"Total time taken: {dur_str}"
+                    now_utc = datetime.now(timezone.utc)
+                    completed_time = update_task_data.get('completed_at', now_utc)
+                    # Ensure both datetimes are timezone-aware for safe subtraction
+                    if completed_time is not None:
+                        if hasattr(completed_time, 'tzinfo') and completed_time.tzinfo is None:
+                            completed_time = completed_time.replace(tzinfo=timezone.utc)
+                        started = db_task.started_at
+                        if hasattr(started, 'tzinfo') and started.tzinfo is None:
+                            started = started.replace(tzinfo=timezone.utc)
+                        duration_sec = (completed_time - started).total_seconds()
+                        if duration_sec > 0:
+                            m, s = divmod(int(duration_sec), 60)
+                            h, m = divmod(m, 60)
+                            dur_str = f"{h}h {m}m {s}s" if h > 0 else (f"{m}m {s}s" if m > 0 else f"{s}s")
+                            log.details = f"Total time taken: {dur_str}"
+
                 
                 db.add(log)
         elif key == "priority":
