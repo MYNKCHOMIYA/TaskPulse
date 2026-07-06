@@ -14,7 +14,9 @@ self.addEventListener('fetch', (event) => {
     url.includes('vercel.com') ||
     url.includes('manifest.webmanifest') ||
     url.includes('/api/') ||
-    url.includes('/auth/')
+    url.includes('/auth/') ||
+    url.includes('onrender.com') ||
+    url.includes('/tasks/')
   ) {
     return;
   }
