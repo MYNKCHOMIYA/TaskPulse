@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 #------------------------GET TASKS-----------------------------------------
+@router.get("", response_model=TaskListResponse)
 @router.get("/", response_model=TaskListResponse)
 def get_tasks(
     search: str | None = None,
@@ -148,14 +149,15 @@ def update_task(id:int,task : UpdateTask,db : Session = Depends(get_db),token_da
                 log = TaskEventLog(task_id=id, task_title=title, user_id=user_id, event_type="STATUS_CHANGE", old_value=str(old_status), new_value=str(new_status))
                 
                 # Check for completion to calc duration
-                if new_status == "COMPLETED" and db_task.started_at:
+                started = update_task_data.get('started_at', db_task.started_at)
+                if new_status == "COMPLETED" and started:
                     now_utc = datetime.now(timezone.utc)
                     completed_time = update_task_data.get('completed_at', now_utc)
                     # Ensure both datetimes are timezone-aware for safe subtraction
                     if completed_time is not None:
                         if hasattr(completed_time, 'tzinfo') and completed_time.tzinfo is None:
                             completed_time = completed_time.replace(tzinfo=timezone.utc)
-                        started = db_task.started_at
+                        
                         if hasattr(started, 'tzinfo') and started.tzinfo is None:
                             started = started.replace(tzinfo=timezone.utc)
                         duration_sec = (completed_time - started).total_seconds()
@@ -164,7 +166,6 @@ def update_task(id:int,task : UpdateTask,db : Session = Depends(get_db),token_da
                             h, m = divmod(m, 60)
                             dur_str = f"{h}h {m}m {s}s" if h > 0 else (f"{m}m {s}s" if m > 0 else f"{s}s")
                             log.details = f"Total time taken: {dur_str}"
-
                 
                 db.add(log)
         elif key == "priority":

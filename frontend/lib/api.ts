@@ -171,7 +171,8 @@ export const api = {
         params.append("priority", filters.priority)
       }
 
-      const res = await apiFetch(`/tasks/?${params.toString()}`)
+      const qs = params.toString()
+      const res = await apiFetch(`/tasks${qs ? '?' + qs : ''}`)
       if (!res.ok) {
         throw new Error("Failed to fetch tasks")
       }
@@ -225,13 +226,15 @@ export const api = {
     },
 
     async updateTask(id: number, taskData: Partial<Omit<Task, "id" | "created_at" | "updated_at">>): Promise<Task> {
-      const payload = {
+      const payload: any = {
         title: taskData.title,
         description: taskData.description,
         status: taskData.status,
         priority: taskData.priority,
         due_date: taskData.due_date,
       }
+      if (taskData.started_at !== undefined) payload.started_at = taskData.started_at
+      if (taskData.completed_at !== undefined) payload.completed_at = taskData.completed_at
 
       const res = await apiFetch(`/tasks/update/${id}`, {
         method: "PATCH",
