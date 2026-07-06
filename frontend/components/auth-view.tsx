@@ -319,10 +319,10 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
           pointer-events: none;
         }
 
-        /* Large screens get the high-resolution bg.png (4.5MB) */
+        /* Large screens get the high-resolution bg-desktop.webp (optimized) */
         @media (min-width: 1024px) {
           .gl-bg-image {
-            background-image: url('/bg.png');
+            background-image: url('/bg-desktop.webp');
           }
         }
 

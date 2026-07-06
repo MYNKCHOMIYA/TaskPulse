@@ -42,7 +42,7 @@ export default function RootLayout({
       <head>
         {/* Preload background image for instant painting - media queries ensure only the correct one downloads */}
         <link rel="preload" href="/bg.webp" as="image" type="image/webp" media="(max-width: 1023px)" />
-        <link rel="preload" href="/bg.png" as="image" type="image/png" media="(min-width: 1024px)" />
+        <link rel="preload" href="/bg-desktop.webp" as="image" type="image/webp" media="(min-width: 1024px)" />
 
         {/* PWA & iOS standalone app capability meta tags */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
