@@ -424,6 +424,30 @@ export function TaskListItem({
                 ? <span className={cn("inline-flex items-center gap-1 text-[11px]", isOverdue ? "font-medium text-destructive" : "text-muted-foreground")}><CalendarDays className="size-3 shrink-0" />{formatDueDate(task.due_date)}</span>
                 : <span className="text-[11px] text-muted-foreground/40">No due date</span>}
             </div>
+            {/* Inline timing badges — always visible, no expand needed */}
+            {task.status === "IN_PROGRESS" && task.started_at && (
+              <div className="flex items-center gap-2 mt-0.5">
+                <Play className="size-2.5 text-blue-500 shrink-0" />
+                <span className="text-[10px] text-muted-foreground">Started {formatUTC(task.started_at)}</span>
+                <LiveTimer startedAt={task.started_at} />
+              </div>
+            )}
+            {task.status === "COMPLETED" && task.completed_at && (
+              <div className="flex items-center gap-2 mt-0.5">
+                <Check className="size-2.5 text-emerald-500 shrink-0" />
+                {task.started_at && task.completed_at ? (
+                  <span className="text-[10px] text-muted-foreground">
+                    Completed in{" "}
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      {formatDuration(new Date(task.completed_at).getTime() - new Date(task.started_at).getTime())}
+                    </span>
+                    {" · "}{formatUTC(task.started_at).replace(" UTC","")} → {formatUTC(task.completed_at)}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">Completed at {formatUTC(task.completed_at)}</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions */}

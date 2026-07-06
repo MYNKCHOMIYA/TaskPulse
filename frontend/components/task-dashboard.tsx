@@ -773,6 +773,66 @@ function TaskHistoryPanel({ open, onClose }: { open: boolean, onClose: () => voi
     }
   }, [open])
 
+  // Group logs by date (UTC date string as key)
+  const groupedLogs = React.useMemo(() => {
+    const groups: { dateLabel: string; logs: TaskEventLog[] }[] = []
+    const map = new Map<string, TaskEventLog[]>()
+    for (const log of logs) {
+      const d = new Date(log.timestamp)
+      const key = d.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric" })
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(log)
+    }
+    map.forEach((dayLogs, label) => groups.push({ dateLabel: label, logs: dayLogs }))
+    return groups
+  }, [logs])
+
+  function getEventConfig(log: TaskEventLog) {
+    if (log.event_type === "CREATE") return {
+      Icon: Plus,
+      colorClass: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
+      title: `Created "${log.task_title}"`,
+      detail: null,
+    }
+    if (log.event_type === "DELETE") return {
+      Icon: Trash2,
+      colorClass: "text-destructive bg-destructive/10 border-destructive/20",
+      title: `Deleted "${log.task_title}"`,
+      detail: null,
+    }
+    if (log.event_type === "STATUS_CHANGE") {
+      const isComplete = log.new_value === "COMPLETED"
+      const isStart = log.new_value === "IN_PROGRESS"
+      const colorClass = isComplete
+        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+        : isStart
+        ? "text-blue-500 bg-blue-500/10 border-blue-500/20"
+        : "text-amber-500 bg-amber-500/10 border-amber-500/20"
+      const oldLabel = log.old_value?.replace("_", " ") ?? "—"
+      const newLabel = log.new_value?.replace("_", " ") ?? "—"
+      return {
+        Icon: CheckCircle2,
+        colorClass,
+        title: `"${log.task_title}" → ${newLabel}`,
+        detail: log.details
+          ? log.details
+          : `Status changed: ${oldLabel} → ${newLabel}`,
+      }
+    }
+    if (log.event_type === "PRIORITY_CHANGE") return {
+      Icon: SlidersHorizontal,
+      colorClass: "text-orange-500 bg-orange-500/10 border-orange-500/20",
+      title: `Priority changed on "${log.task_title}"`,
+      detail: `${log.old_value || "None"} → ${log.new_value || "None"}`,
+    }
+    return {
+      Icon: Activity,
+      colorClass: "text-muted-foreground bg-muted",
+      title: `Updated "${log.task_title}"`,
+      detail: null,
+    }
+  }
+
   return (
     <>
       <div 
@@ -786,71 +846,79 @@ function TaskHistoryPanel({ open, onClose }: { open: boolean, onClose: () => voi
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
           <div className="flex items-center gap-2.5 text-foreground">
             <Activity className="size-5 text-primary" />
-            <h2 className="text-lg font-bold">Activity History</h2>
+            <div>
+              <h2 className="text-lg font-bold leading-none">Activity History</h2>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Last 7 days of all events</p>
+            </div>
           </div>
           <button onClick={onClose} className="rounded-full p-2 hover:bg-muted transition-colors">
             <X className="size-4 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-8">
           {loading ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
               <Loader2 className="size-6 animate-spin" />
             </div>
-          ) : logs.length === 0 ? (
-            <div className="text-center py-10 text-sm text-muted-foreground">
-              No activity in the last 7 days.
+          ) : groupedLogs.length === 0 ? (
+            <div className="text-center py-10 space-y-2">
+              <Activity className="size-8 text-muted-foreground/30 mx-auto" />
+              <p className="text-sm text-muted-foreground">No activity in the last 7 days.</p>
+              <p className="text-xs text-muted-foreground/60">Create or update tasks to see your activity log here.</p>
             </div>
           ) : (
-            <div className="relative border-l border-border pl-6 ml-3 space-y-8 pb-10">
-              {logs.map((log) => {
-                const date = new Date(log.timestamp)
-                const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-                let Icon = Activity
-                let colorClass = "text-muted-foreground bg-muted"
-                let message = `Updated task '${log.task_title}'`
+            groupedLogs.map(({ dateLabel, logs: dayLogs }) => (
+              <div key={dateLabel}>
+                {/* Day header */}
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">{dateLabel}</span>
+                  <div className="flex-1 h-px bg-border/60" />
+                  <span className="text-[10px] text-muted-foreground/50 font-medium">{dayLogs.length} event{dayLogs.length !== 1 ? "s" : ""}</span>
+                </div>
 
-                if (log.event_type === "CREATE") {
-                  Icon = Plus
-                  colorClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
-                  message = `Created task '${log.task_title}'`
-                } else if (log.event_type === "DELETE") {
-                  Icon = Trash2
-                  colorClass = "text-destructive bg-destructive/10 border-destructive/20"
-                  message = `Deleted task '${log.task_title}'`
-                } else if (log.event_type === "STATUS_CHANGE") {
-                  Icon = CheckCircle2
-                  if (log.new_value === "COMPLETED") colorClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
-                  else if (log.new_value === "IN_PROGRESS") colorClass = "text-blue-500 bg-blue-500/10 border-blue-500/20"
-                  else colorClass = "text-amber-500 bg-amber-500/10 border-amber-500/20"
-                  message = `Changed status of '${log.task_title}' from ${log.old_value} to ${log.new_value}`
-                } else if (log.event_type === "PRIORITY_CHANGE") {
-                  Icon = SlidersHorizontal
-                  colorClass = "text-orange-500 bg-orange-500/10 border-orange-500/20"
-                  message = `Changed priority of '${log.task_title}' from ${log.old_value || "None"} to ${log.new_value || "None"}`
-                }
-
-                return (
-                  <div key={log.id} className="relative animate-fade-up">
-                    <span className={cn("absolute -left-[37px] flex size-6 items-center justify-center rounded-full border ring-4 ring-background", colorClass)}>
-                      <Icon className="size-3" />
-                    </span>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{dateStr}</span>
-                      <p className="text-sm font-medium leading-snug">{message}</p>
-                      {log.details && (
-                        <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md mt-1.5 font-medium border border-border/50">
-                          {log.details}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                {/* Timeline */}
+                <div className="relative border-l border-border pl-6 ml-3 space-y-6 pb-2">
+                  {dayLogs.map((log) => {
+                    const cfg = getEventConfig(log)
+                    const timeStr = new Date(log.timestamp).toLocaleTimeString("en-US", {
+                      timeZone: "UTC", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true
+                    })
+                    return (
+                      <div key={log.id} className="relative animate-fade-up">
+                        <span className={cn("absolute -left-[37px] flex size-6 items-center justify-center rounded-full border ring-4 ring-background", cfg.colorClass)}>
+                          <cfg.Icon className="size-3" />
+                        </span>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{timeStr} UTC</span>
+                            <span className={cn("inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide border", cfg.colorClass)}>
+                              {log.event_type.replace("_", " ")}
+                            </span>
+                          </div>
+                          <p className="text-sm font-semibold leading-snug">{cfg.title}</p>
+                          {cfg.detail && (
+                            <p className="text-xs text-muted-foreground bg-muted/50 px-2.5 py-1.5 rounded-lg mt-0.5 font-medium border border-border/50 leading-relaxed">
+                              {cfg.detail}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
           )}
         </div>
+
+        {/* Footer summary */}
+        {!loading && logs.length > 0 && (
+          <div className="border-t border-border px-6 py-3 bg-muted/20 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{logs.length} total events</span>
+            <span className="text-xs text-muted-foreground">Last 7 days · UTC</span>
+          </div>
+        )}
       </div>
     </>
   )
