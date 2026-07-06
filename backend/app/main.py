@@ -2,12 +2,34 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.database import Base, engine
 # FIX 1: Import your models explicitly so Base.metadata knows your table schemas exist!
 from models.user import User, Task, TokenBlocklist 
 from routers import auth, tasks, analytics, user
+
+# Schema migrations that are safe to run on every startup (idempotent)
+MIGRATION_STATEMENTS = [
+    # Add columns that were added to the model after the table was created
+    "ALTER TABLE task ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE task ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE",
+    # Create task_event_log table if it doesn't exist (belt-and-suspenders alongside create_all)
+    """
+    CREATE TABLE IF NOT EXISTS task_event_log (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER,
+        task_title VARCHAR(100) NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        event_type VARCHAR(50) NOT NULL,
+        old_value VARCHAR(255),
+        new_value VARCHAR(255),
+        details VARCHAR(255),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+    """,
+]
 
 # 1. LIFESPAN RETRY CONNECTION LOOP
 @asynccontextmanager
@@ -27,6 +49,16 @@ async def lifespan(app: FastAPI):
             # Build database tables dynamically if they don't exist yet
             Base.metadata.create_all(bind=engine)
             print("SUCCESS: Database table schemas initialized flawlessly.", flush=True)
+            
+            # Run safe idempotent migrations for columns added after initial deploy
+            with engine.begin() as connection:
+                for stmt in MIGRATION_STATEMENTS:
+                    try:
+                        connection.execute(text(stmt))
+                        print(f"SUCCESS: Migration applied.", flush=True)
+                    except Exception as e:
+                        print(f"WARN: Migration skipped (likely already applied): {e}", flush=True)
+            print("SUCCESS: Schema migrations complete.", flush=True)
             break
         except OperationalError:
             retries -= 1
@@ -38,6 +70,7 @@ async def lifespan(app: FastAPI):
         
     yield
     print("INFO: Shutting down application web server process...", flush=True)
+
 
 
 # 2. APPLICATION INITIALIZATION
