@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
 
 
 # 2. APPLICATION INITIALIZATION
-app = FastAPI(title="TaskPulse API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="TaskPulse API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
 origins = [
     "http://localhost:3000",
