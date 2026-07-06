@@ -31,6 +31,42 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; badge: string; dot: str
   COMPLETED:   { label: "Completed",   badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", dot: "bg-emerald-400", border: "border-l-transparent" },
 }
 
+// ── Time Helpers ─────────────────────────────────────────────
+function formatUTC(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "UTC", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true
+  }) + " UTC"
+}
+
+function formatDuration(ms: number) {
+  if (ms < 0) ms = 0
+  const secs = Math.floor(ms / 1000)
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+function LiveTimer({ startedAt }: { startedAt: string }) {
+  const [elapsed, setElapsed] = React.useState(0)
+
+  React.useEffect(() => {
+    const start = new Date(startedAt).getTime()
+    const update = () => setElapsed(Date.now() - start)
+    update() // initial
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [startedAt])
+
+  return (
+    <span className="font-mono bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-tight shadow-sm">
+      {formatDuration(elapsed)}
+    </span>
+  )
+}
+
 // Logarithmic spring — resistance builds up, hard clamp at 45% viewport
 function spring(dx: number): number {
   const abs = Math.abs(dx), sign = Math.sign(dx)
@@ -392,9 +428,9 @@ export function TaskListItem({
 
           {/* Actions */}
           <div className="flex shrink-0 items-center gap-1">
-            {task.description && (
+            {(task.description || task.started_at || task.completed_at) && (
               <button onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
-                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150">
+                className={cn("flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all duration-150", !expanded && "opacity-0 group-hover:opacity-100")}>
                 <ChevronDown className={cn("size-3.5 transition-transform duration-200", expanded && "rotate-180")} />
               </button>
             )}
@@ -408,9 +444,38 @@ export function TaskListItem({
         </div>
       </div>
 
-      {expanded && task.description && (
-        <div className="px-12 pb-3.5 animate-fade-up">
-          <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground leading-relaxed">{task.description}</p>
+      {expanded && (
+        <div className="px-12 pb-3.5 animate-fade-up space-y-3">
+          {task.description && (
+            <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground leading-relaxed">
+              {task.description}
+            </p>
+          )}
+          
+          {/* Timing details */}
+          {(task.started_at || task.completed_at) && (
+            <div className="flex flex-col gap-1.5 rounded-lg border border-border/50 bg-background/50 p-3 text-[11px] text-muted-foreground">
+              {task.started_at && (
+                <div className="flex items-center gap-2">
+                  <Play className="size-3 text-blue-500" />
+                  <span>Started at: <span className="font-semibold text-foreground">{formatUTC(task.started_at)}</span></span>
+                  {task.status === "IN_PROGRESS" && <LiveTimer startedAt={task.started_at} />}
+                </div>
+              )}
+              {task.completed_at && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <Check className="size-3 text-emerald-500" />
+                  <span>Ended at: <span className="font-semibold text-foreground">{formatUTC(task.completed_at)}</span></span>
+                </div>
+              )}
+              {task.completed_at && task.started_at && (
+                <div className="mt-1.5 border-t border-border/50 pt-1.5">
+                  <span className="font-medium text-foreground">Time taken:</span>{" "}
+                  {formatDuration(new Date(task.completed_at).getTime() - new Date(task.started_at).getTime())}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

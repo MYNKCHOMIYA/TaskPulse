@@ -10,6 +10,19 @@ export interface Task {
   due_date: string | null // ISO date string or null
   created_at: string
   updated_at: string
+  started_at?: string | null
+  completed_at?: string | null
+}
+
+export interface TaskEventLog {
+  id: number
+  task_id: number | null
+  task_title: string
+  event_type: string
+  old_value: string | null
+  new_value: string | null
+  details: string | null
+  timestamp: string
 }
 
 export interface User {
@@ -67,6 +80,7 @@ export const INITIAL_TASKS: Task[] = [
     due_date: daysFromNow(2),
     created_at: daysFromNow(-6),
     updated_at: daysFromNow(-1),
+    started_at: daysFromNow(-1),
   },
   {
     id: "t2",
@@ -78,6 +92,8 @@ export const INITIAL_TASKS: Task[] = [
     due_date: daysFromNow(5),
     created_at: daysFromNow(-4),
     updated_at: daysFromNow(-4),
+    started_at: null,
+    completed_at: null,
   },
   {
     id: "t3",
@@ -89,6 +105,8 @@ export const INITIAL_TASKS: Task[] = [
     due_date: daysFromNow(-1),
     created_at: daysFromNow(-10),
     updated_at: daysFromNow(-1),
+    started_at: daysFromNow(-2),
+    completed_at: daysFromNow(-1),
   },
   {
     id: "t4",
@@ -100,6 +118,8 @@ export const INITIAL_TASKS: Task[] = [
     due_date: daysFromNow(7),
     created_at: daysFromNow(-2),
     updated_at: daysFromNow(-2),
+    started_at: null,
+    completed_at: null,
   },
   {
     id: "t5",
@@ -110,5 +130,7 @@ export const INITIAL_TASKS: Task[] = [
     due_date: null,
     created_at: daysFromNow(-3),
     updated_at: daysFromNow(-3),
+    started_at: null,
+    completed_at: null,
   },
 ]

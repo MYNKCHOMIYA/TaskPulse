@@ -29,6 +29,26 @@ class TaskModel(BaseModel):
     due_date: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+# --- TASK HISTORY EVENT LOG SCHEMA ---
+class TaskEventLogModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: Optional[int] = None
+    task_title: str
+    event_type: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    details: Optional[str] = None
+    timestamp: datetime
+
+class TaskHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    logs: List[TaskEventLogModel]
 
 
 # --- GET ALL TASKS RESPONSE CONTAINER ---
@@ -57,3 +77,5 @@ class UpdateTask(BaseModel):
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     due_date: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None

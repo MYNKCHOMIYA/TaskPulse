@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import {
   CheckCircle2,
   ChevronDown,
@@ -12,6 +11,9 @@ import {
   X,
   Pencil,
   Trash2,
+  CalendarDays,
+  History,
+  Activity,
 } from "lucide-react"
 import confetti from "canvas-confetti"
 import { cn } from "@/lib/utils"
@@ -21,9 +23,72 @@ import {
   type Task,
   type TaskPriority,
   type TaskStatus,
+  type TaskEventLog
 } from "@/lib/tasks"
 import { TaskListItem } from "@/components/task-list-item"
 import { TaskFormPanel, type TaskFormValues } from "@/components/task-form-panel"
+
+// ── Timezone & Live Clock ──────────────────────────────────
+function TimezoneHeader() {
+  const [time, setTime] = React.useState(new Date())
+  const [tz, setTz] = React.useState("UTC")
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Format date: "Mon, Jul 6, 2026"
+  const dateStr = time.toLocaleDateString("en-US", {
+    timeZone: tz,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  })
+
+  // Format time: "10:30:15 AM"
+  const timeStr = time.toLocaleTimeString("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit"
+  })
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/30 border-b border-border px-6 py-2.5">
+      <div className="flex items-center gap-2.5">
+        <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <CalendarDays className="size-4" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-xs font-semibold tracking-wide text-foreground">{dateStr}</span>
+          <span className="text-[10px] font-medium text-muted-foreground font-mono">{timeStr}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Timezone:</label>
+        <div className="relative">
+          <select
+            value={tz}
+            onChange={e => setTz(e.target.value)}
+            className="h-7 appearance-none rounded-lg border border-border bg-background pl-2.5 pr-7 text-xs font-medium outline-none hover:bg-muted focus:border-primary focus:ring-1 focus:ring-primary/20"
+          >
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">New York (EST)</option>
+            <option value="America/Los_Angeles">Los Angeles (PST)</option>
+            <option value="Europe/London">London (GMT)</option>
+            <option value="Europe/Paris">Paris (CET)</option>
+            <option value="Asia/Kolkata">India (IST)</option>
+            <option value="Asia/Tokyo">Tokyo (JST)</option>
+            <option value="Australia/Sydney">Sydney (AEDT)</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 type PriorityFilter = Exclude<TaskPriority, null> | "NONE" | "ALL"
 
@@ -85,6 +150,7 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
   const [showCompleted,   setShowCompleted]  = React.useState(true)
 
   const [panelOpen,     setPanelOpen]     = React.useState(false)
+  const [historyOpen,   setHistoryOpen]   = React.useState(false)
   const [editingTask,   setEditingTask]   = React.useState<Task | null>(null)
   const [deleteTarget,  setDeleteTarget]  = React.useState<Task | null>(null)
   const [deleteLoading, setDeleteLoading] = React.useState(false)
@@ -230,15 +296,25 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
   async function handleToggleComplete(task: Task) {
     const newStatus: TaskStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED"
     
+    // Add timestamps based on new status
+    const updates: Partial<Task> = { status: newStatus }
+    if (newStatus === "COMPLETED") {
+      updates.completed_at = new Date().toISOString()
+      // If it somehow bypassed IN_PROGRESS, give it a started_at of now
+      if (!task.started_at) updates.started_at = updates.completed_at
+    } else if (newStatus === "IN_PROGRESS" && !task.started_at) {
+      updates.started_at = new Date().toISOString()
+    }
+    
     // Optimistic update
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...updates } : t))
     
     if (newStatus === "COMPLETED") {
       triggerConfetti()
     }
     
     try {
-      const updated = await api.tasks.updateTask(task.id, { status: newStatus })
+      const updated = await api.tasks.updateTask(task.id, updates)
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t))
     } catch (err: any) {
       // Revert on failure
@@ -251,15 +327,23 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
     if (task.status === status) return
     const originalStatus = task.status
     
+    const updates: Partial<Task> = { status }
+    if (status === "IN_PROGRESS" && !task.started_at) {
+      updates.started_at = new Date().toISOString()
+    } else if (status === "COMPLETED") {
+      updates.completed_at = new Date().toISOString()
+      if (!task.started_at) updates.started_at = updates.completed_at
+    }
+    
     // Optimistic update
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status } : t))
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...updates } : t))
     
     if (status === "COMPLETED") {
       triggerConfetti()
     }
     
     try {
-      const updated = await api.tasks.updateTask(task.id, { status })
+      const updated = await api.tasks.updateTask(task.id, updates)
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t))
     } catch (err: any) {
       // Revert on failure
@@ -300,6 +384,7 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      <TimezoneHeader />
 
       {/* ── Sticky header ────────────────────────────────── */}
       <div className="sticky top-0 z-10 flex flex-col gap-4 border-b border-border bg-background/90 backdrop-blur px-6 pt-6 pb-4">
@@ -369,13 +454,23 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
             )}
           </div>
 
-          <button
-            onClick={openCreate}
-            className="flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 h-9 text-sm font-semibold text-primary-foreground hover:brightness-110 hover:shadow-lg hover:shadow-primary/25 active:scale-95 transition-all duration-150"
-          >
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">New Task</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground h-9 px-3 text-sm font-semibold transition-all duration-150 active:scale-95"
+              title="Activity History"
+            >
+              <History className="size-4" />
+              <span className="hidden sm:inline">History</span>
+            </button>
+            <button
+              onClick={openCreate}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 h-9 text-sm font-semibold text-primary-foreground hover:brightness-110 hover:shadow-lg hover:shadow-primary/25 active:scale-95 transition-all duration-150"
+            >
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">New Task</span>
+            </button>
+          </div>
         </div>
 
         {/* Search + filter toggle */}
@@ -546,6 +641,9 @@ export function TaskDashboard({ statusView = "all" }: TaskDashboardProps) {
         onSave={handleSave}
       />
 
+      {/* ── Task history panel ────────────────────────────── */}
+      <TaskHistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
+
       {/* ── Delete confirm ────────────────────────────────── */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -650,5 +748,106 @@ function EmptyState({
         {hasFilters ? "Clear filters" : "Create a task"}
       </button>
     </div>
+  )
+}
+
+// ── Activity History Panel ─────────────────────────────────
+function TaskHistoryPanel({ open, onClose }: { open: boolean, onClose: () => void }) {
+  const [logs, setLogs] = React.useState<TaskEventLog[]>([])
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (open) {
+      setLoading(true)
+      api.tasks.getHistory().then(data => {
+        setLogs(data)
+      }).catch(err => {
+        console.error(err)
+      }).finally(() => {
+        setLoading(false)
+      })
+    }
+  }, [open])
+
+  return (
+    <>
+      <div 
+        className={cn("fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300", open ? "opacity-100" : "opacity-0 pointer-events-none")}
+        onClick={onClose} 
+      />
+      <div className={cn(
+        "fixed right-0 top-0 z-50 h-full w-full max-w-md bg-background shadow-2xl transition-transform duration-300 flex flex-col border-l border-border",
+        open ? "translate-x-0" : "translate-x-full"
+      )}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+          <div className="flex items-center gap-2.5 text-foreground">
+            <Activity className="size-5 text-primary" />
+            <h2 className="text-lg font-bold">Activity History</h2>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 hover:bg-muted transition-colors">
+            <X className="size-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="text-center py-10 text-sm text-muted-foreground">
+              No activity in the last 7 days.
+            </div>
+          ) : (
+            <div className="relative border-l border-border pl-6 ml-3 space-y-8 pb-10">
+              {logs.map((log) => {
+                const date = new Date(log.timestamp)
+                const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+                let Icon = Activity
+                let colorClass = "text-muted-foreground bg-muted"
+                let message = `Updated task '${log.task_title}'`
+
+                if (log.event_type === "CREATE") {
+                  Icon = Plus
+                  colorClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+                  message = `Created task '${log.task_title}'`
+                } else if (log.event_type === "DELETE") {
+                  Icon = Trash2
+                  colorClass = "text-destructive bg-destructive/10 border-destructive/20"
+                  message = `Deleted task '${log.task_title}'`
+                } else if (log.event_type === "STATUS_CHANGE") {
+                  Icon = CheckCircle2
+                  if (log.new_value === "COMPLETED") colorClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+                  else if (log.new_value === "IN_PROGRESS") colorClass = "text-blue-500 bg-blue-500/10 border-blue-500/20"
+                  else colorClass = "text-amber-500 bg-amber-500/10 border-amber-500/20"
+                  message = `Changed status of '${log.task_title}' from ${log.old_value} to ${log.new_value}`
+                } else if (log.event_type === "PRIORITY_CHANGE") {
+                  Icon = SlidersHorizontal
+                  colorClass = "text-orange-500 bg-orange-500/10 border-orange-500/20"
+                  message = `Changed priority of '${log.task_title}' from ${log.old_value || "None"} to ${log.new_value || "None"}`
+                }
+
+                return (
+                  <div key={log.id} className="relative animate-fade-up">
+                    <span className={cn("absolute -left-[37px] flex size-6 items-center justify-center rounded-full border ring-4 ring-background", colorClass)}>
+                      <Icon className="size-3" />
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{dateStr}</span>
+                      <p className="text-sm font-medium leading-snug">{message}</p>
+                      {log.details && (
+                        <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md mt-1.5 font-medium border border-border/50">
+                          {log.details}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   )
 }

@@ -185,6 +185,15 @@ export const api = {
       return tasksList
     },
 
+    async getHistory(): Promise<any[]> {
+      const res = await apiFetch("/tasks/history")
+      if (!res.ok) {
+        throw new Error("Failed to fetch task history")
+      }
+      const data = await res.json()
+      return data.logs
+    },
+
     async createTask(taskData: Omit<Task, "id" | "created_at" | "updated_at">): Promise<Task> {
       const payload = {
         title: taskData.title,

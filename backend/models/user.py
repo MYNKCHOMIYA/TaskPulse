@@ -1,6 +1,6 @@
 import enum
 from typing import Optional
-from sqlalchemy import String,Enum,func,DateTime,ForeignKey 
+from sqlalchemy import String,Enum,func,DateTime,ForeignKey,Integer
 from sqlalchemy.orm import Mapped,mapped_column,relationship
 from datetime import datetime
 
@@ -42,6 +42,8 @@ class Task(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id",ondelete="CASCADE"),nullable = False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now())
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     
     user: Mapped["User"] = relationship(back_populates ="tasks" )
     
@@ -51,4 +53,16 @@ class TokenBlocklist(Base):
     jti: Mapped[str] = mapped_column(String(36),nullable=False,unique=True ,index = True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     
+class TaskEventLog(Base):
+    __tablename__ = "task_event_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[Optional[int]] = mapped_column(Integer)
+    task_title: Mapped[str] = mapped_column(String(100), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    old_value: Mapped[Optional[str]] = mapped_column(String(255))
+    new_value: Mapped[Optional[str]] = mapped_column(String(255))
+    details: Mapped[Optional[str]] = mapped_column(String(255))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 # Base.metadata.create_all(engine)

@@ -3,8 +3,9 @@ from app.database import get_db
 from sqlalchemy import select, case
 from sqlalchemy.orm import Session
 from core.security import TokenData, verify_token
-from models.user import Task, User, Priority, Status # MATCHED: Imports your true database model Enums
-from schemas.tasks import TaskListResponse, CreateTask, TaskModel, UpdateTask, TaskPriority, TaskStatus
+from models.user import Task, User, Priority, Status, TaskEventLog
+from schemas.tasks import TaskListResponse, CreateTask, TaskModel, UpdateTask, TaskPriority, TaskStatus, TaskHistoryResponse
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -59,6 +60,30 @@ def get_tasks(
     return {"tasks": tasks}
 
 
+#-----------------------------GET HISTORY-------------------------------------
+@router.get("/history", response_model=TaskHistoryResponse)
+def get_task_history(
+    db: Session = Depends(get_db),
+    token_data: TokenData = Depends(verify_token)
+):
+    user_id = db.scalar(select(User.id).where(User.email == token_data.email))
+    if not user_id:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_404_NOT_FOUND, 
+            detail="User not found"
+        )
+    
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    
+    query = (
+        select(TaskEventLog)
+        .where(TaskEventLog.user_id == user_id, TaskEventLog.timestamp >= seven_days_ago)
+        .order_by(TaskEventLog.timestamp.desc())
+    )
+    logs = db.scalars(query).all()
+    return {"logs": logs}
+
+
 #-----------------------------CREATE TASKS------------------------------------
 @router.post("/create",status_code=fastapi_status.HTTP_201_CREATED,response_model= TaskModel)
 def create_tasks(
@@ -81,6 +106,16 @@ def create_tasks(
     db.add(new_tasks)
     db.commit()
     db.refresh(new_tasks)
+    
+    log = TaskEventLog(
+        task_id=new_tasks.id,
+        task_title=new_tasks.title,
+        user_id=user_id,
+        event_type="CREATE",
+    )
+    db.add(log)
+    db.commit()
+    
     return new_tasks
     
 #-----------------------------UPDATE TASKS------------------------------------
@@ -100,10 +135,36 @@ def update_task(id:int,task : UpdateTask,db : Session = Depends(get_db),token_da
             detail="Task not found or unauthorized"
         )
     
-    update_task = task.model_dump(exclude_unset=True)
+    update_task_data = task.model_dump(exclude_unset=True)
     
-    for key,value in update_task.items():
-        setattr(db_task,key,value)
+    user_id = db_task.user_id
+    title = db_task.title
+    
+    for key, value in update_task_data.items():
+        if key == "status":
+            old_status = db_task.status.name if hasattr(db_task.status, 'name') else db_task.status
+            new_status = value.name if hasattr(value, 'name') else value
+            if old_status != new_status:
+                log = TaskEventLog(task_id=id, task_title=title, user_id=user_id, event_type="STATUS_CHANGE", old_value=str(old_status), new_value=str(new_status))
+                
+                # Check for completion to calc duration
+                if new_status == "COMPLETED" and db_task.started_at:
+                    completed_time = update_task_data.get('completed_at', datetime.now(timezone.utc).replace(tzinfo=None))
+                    duration_sec = (completed_time - db_task.started_at).total_seconds()
+                    if duration_sec > 0:
+                        m, s = divmod(int(duration_sec), 60)
+                        h, m = divmod(m, 60)
+                        dur_str = f"{h}h {m}m {s}s" if h > 0 else (f"{m}m {s}s" if m > 0 else f"{s}s")
+                        log.details = f"Total time taken: {dur_str}"
+                
+                db.add(log)
+        elif key == "priority":
+            old_pri = db_task.priority.name if db_task.priority and hasattr(db_task.priority, 'name') else str(db_task.priority)
+            new_pri = value.name if value and hasattr(value, 'name') else str(value)
+            if old_pri != new_pri:
+                db.add(TaskEventLog(task_id=id, task_title=title, user_id=user_id, event_type="PRIORITY_CHANGE", old_value=old_pri, new_value=new_pri))
+                
+        setattr(db_task, key, value)
     
     db.commit()
     db.refresh(db_task)
@@ -147,6 +208,10 @@ def delete_task(id:int,db:Session = Depends(get_db),token_data: TokenData = Depe
         
     task_title = db_task.title
     task_id = db_task.id
+    user_id = db_task.user_id
+    
+    log = TaskEventLog(task_id=task_id, task_title=task_title, user_id=user_id, event_type="DELETE")
+    db.add(log)
     
     db.delete(db_task)
     db.commit()
