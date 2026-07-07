@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: Run Test Suite
+    name: Run Quality Checks & Test Suite
     runs-on: ubuntu-latest
 
     services:
@@ -35,30 +35,42 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. Set up the specific Python runtime environment
-      # FIX 1: Swapped 'add-to-registry-python' to the official standard 'setup-python' engine
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip' 
-          # FIX 2: Explicitly tell the caching engine where your dependencies file lives
           cache-dependency-path: backend/requirements.txt
 
       # 3. Install all dependencies from your verified requirements file
-      # FIX 3: Added working-directory parameter so pip finds your file inside the backend subfolder
       - name: Install Dependencies
         working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Force install the QA tools just in case they aren't in your requirements.txt yet
+          pip install black flake8 pytest-cov
 
-      # 4. Inject temporary environment variables for the test context runtime scope
-      # FIX 4: Added working-directory parameter so pytest finds your modules layout tree seamlessly
-      - name: Run Automated Pytest Engine
+      # 4. Check Code Formatting (Black)
+      - name: Check Code Formatting (Black)
+        working-directory: ./backend
+        run: |
+          # The --check flag tells Black to crash the build if the code isn't perfectly formatted
+          black . --check
+
+      # 5. Lint Code (Flake8)
+      - name: Lint Code (Flake8)
+        working-directory: ./backend
+        run: |
+          # This scans for critical Python syntax errors or undefined variables
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      # 6. Inject temporary environment variables and run Tests + Coverage
+      - name: Run Automated Pytest Engine with Coverage
         working-directory: ./backend
         env:
           SECRET_KEY: temporary_ci_crypt_secret_signing_key_string_for_testing_boundaries
           DATABASE_URL: postgresql+psycopg2://admin:admin@localhost:5432/taskpulse
         run: |
-          python -m pytest -v
-
+          # Run tests and generate a terminal report showing exactly which lines of code lack test coverage
+          python -m pytest -v --cov=. --cov-report=term-missing
