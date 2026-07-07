@@ -6,8 +6,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.database import Base, engine
+
 # FIX 1: Import your models explicitly so Base.metadata knows your table schemas exist!
-from models.user import User, Task, TokenBlocklist 
+from models.user import User, Task, TokenBlocklist
 from routers import auth, tasks, analytics, user
 
 # Schema migrations that are safe to run on every startup (idempotent)
@@ -31,6 +32,7 @@ MIGRATION_STATEMENTS = [
     """,
 ]
 
+
 # 1. LIFESPAN RETRY CONNECTION LOOP
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,12 +46,15 @@ async def lifespan(app: FastAPI):
         try:
             # Touch the database connection pool safely
             with engine.connect() as connection:
-                print("SUCCESS: Database network pipeline connection verified!", flush=True)
-                
+                print(
+                    "SUCCESS: Database network pipeline connection verified!",
+                    flush=True,
+                )
+
             # Build database tables dynamically if they don't exist yet
             Base.metadata.create_all(bind=engine)
             print("SUCCESS: Database table schemas initialized flawlessly.", flush=True)
-            
+
             # Run safe idempotent migrations for columns added after initial deploy
             with engine.begin() as connection:
                 for stmt in MIGRATION_STATEMENTS:
@@ -57,24 +62,34 @@ async def lifespan(app: FastAPI):
                         connection.execute(text(stmt))
                         print(f"SUCCESS: Migration applied.", flush=True)
                     except Exception as e:
-                        print(f"WARN: Migration skipped (likely already applied): {e}", flush=True)
+                        print(
+                            f"WARN: Migration skipped (likely already applied): {e}",
+                            flush=True,
+                        )
             print("SUCCESS: Schema migrations complete.", flush=True)
             break
         except OperationalError:
             retries -= 1
-            print(f"WARN: Database not ready yet. Retrying in 3 seconds... ({retries} attempts left)", flush=True)
+            print(
+                f"WARN: Database not ready yet. Retrying in 3 seconds... ({retries} attempts left)",
+                flush=True,
+            )
             time.sleep(3)
-            
+
     if retries == 0:
-        print("CRITICAL: Could not establish a connection to the database. Starting without schema validation.", flush=True)
-        
+        print(
+            "CRITICAL: Could not establish a connection to the database. Starting without schema validation.",
+            flush=True,
+        )
+
     yield
     print("INFO: Shutting down application web server process...", flush=True)
 
 
-
 # 2. APPLICATION INITIALIZATION
-app = FastAPI(title="TaskPulse API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
+app = FastAPI(
+    title="TaskPulse API", version="1.0.0", lifespan=lifespan, redirect_slashes=False
+)
 
 origins = [
     "http://localhost:3000",
@@ -99,10 +114,11 @@ app.include_router(tasks.router)
 app.include_router(user.router)
 app.include_router(analytics.router)
 
+
 # 5. ROOT ENDPOINT (FIX 3: Consolidated duplicates into a single comprehensive response)
 @app.get("/")
 def read_root():
     return {
-        "status": "online", 
-        "message": "Welcome to the TaskPulse API cluster backend service"
+        "status": "online",
+        "message": "Welcome to the TaskPulse API cluster backend service",
     }

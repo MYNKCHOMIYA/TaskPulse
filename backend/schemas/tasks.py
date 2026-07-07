@@ -46,6 +46,7 @@ class TaskEventLogModel(BaseModel):
     details: Optional[str] = None
     timestamp: datetime
 
+
 class TaskHistoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     logs: List[TaskEventLogModel]
@@ -60,10 +61,7 @@ class TaskListResponse(BaseModel):
 
 # --- CREATE TASK REQUEST SCHEMA ---
 class CreateTask(BaseModel):
-    title: str = Field(
-        min_length=3,
-        max_length=100
-    )
+    title: str = Field(min_length=3, max_length=100)
     description: Optional[str] = None
     status: TaskStatus = TaskStatus.PENDING
     priority: Optional[TaskPriority] = None

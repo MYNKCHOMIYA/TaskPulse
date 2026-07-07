@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker,DeclarativeBase
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from dotenv import load_dotenv
 import os
 
@@ -16,20 +16,19 @@ if database_url.startswith("postgres://"):
 
 engine = create_engine(database_url)
 
-SessionLocal = sessionmaker(autoflush =False,bind = engine)
+SessionLocal = sessionmaker(autoflush=False, bind=engine)
+
 
 class Base(DeclarativeBase):
     pass
- 
+
+
 def get_db():
-     db = SessionLocal()
-     try:
-         yield db
-     except Exception:
-         db.rollback()
-         raise
-     finally:
-         db.close()
-     
-     
-    
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
