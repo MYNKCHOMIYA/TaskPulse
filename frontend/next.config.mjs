@@ -10,7 +10,7 @@ const nextConfig = {
     return [
       {
         source: '/api/backend/:path*',
-        destination: 'https://taskpulse-api-nbwx.onrender.com/:path*',
+        destination: `${process.env.NEXT_PUBLIC_API_URL || 'https://taskpulse-api-nbwx.onrender.com'}/:path*`,
       },
     ]
   },

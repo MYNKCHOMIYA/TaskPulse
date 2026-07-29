@@ -1,23 +1,7 @@
 version: '3.8'
 
 services:
-  # --- Service 1: Your Active PostgreSQL 16 Database Engine ---
-  db:
-    image: postgres:16
-    restart: always
-    container_name: taskpulse
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: taskpulse
-    volumes:
-      - taskpulse_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - taskpulse_network
-
-  # --- Service 2: Your FastAPI Python Application Workspace ---
+  # --- Your FastAPI Python Application Workspace ---
   web_api:
     build: .
     container_name: taskpulse_api
@@ -26,18 +10,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
-      # Automatically reroutes database connection parameters to read the "db" container name
-      - DATABASE_URL=postgresql+psycopg2://admin:admin@db:5432/taskpulse
     volumes:
       - .:/backend  # Mounts source files for live-reload updates during programming
-    depends_on:
-      - db
     networks:
       - taskpulse_network
-
-volumes:
-  taskpulse_data:
 
 networks:
   taskpulse_network:
